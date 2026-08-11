@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`, enable the camera, or choose **Try demo**. To validate the project:
+Open `http://localhost:3000`, then enable the camera. To validate the project:
 
 ```bash
 npm test
