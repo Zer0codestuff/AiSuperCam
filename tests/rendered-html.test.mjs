@@ -31,11 +31,11 @@ test("server-renders the AiSuperCam studio", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<html lang="it">/i);
-  assert.match(html, /<title>AiSuperCam — effetti webcam controllati con le mani<\/title>/i);
+  assert.match(html, /<html lang="en">/i);
+  assert.match(html, /<title>AiSuperCam — hand-controlled webcam effects<\/title>/i);
   assert.match(html, /AiSuperCam/);
-  assert.match(html, /Attiva fotocamera/);
-  assert.match(html, /Prova la demo/);
+  assert.match(html, /Enable camera/);
+  assert.match(html, /Try demo/);
   assert.match(html, /http:\/\/localhost\/og\.png/);
   assert.doesNotMatch(html, /Starter Project|Building your site|react-loading-skeleton/i);
 });
