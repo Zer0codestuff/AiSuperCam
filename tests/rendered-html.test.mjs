@@ -1,42 +1,47 @@
 import assert from "node:assert/strict";
 import { access, readFile, stat } from "node:fs/promises";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 const projectRoot = new URL("../", import.meta.url);
 
 async function render() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  return worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html", host: "localhost" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
+  const { startProdServer } = await import(
+    "../node_modules/vinext/dist/server/prod-server.js"
   );
+  const { server, port } = await startProdServer({
+    host: "127.0.0.1",
+    port: 0,
+    outDir: fileURLToPath(new URL("../dist", import.meta.url)),
+    silent: true,
+  });
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/`, {
+      headers: { accept: "text/html" },
+    });
+    return { response, html: await response.text() };
+  } finally {
+    await new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
 }
 
 test("server-renders the AiSuperCam studio", async () => {
-  const response = await render();
+  const { response, html } = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
-  const html = await response.text();
   assert.match(html, /<html lang="en">/i);
   assert.match(html, /<title>AiSuperCam — hand-controlled webcam effects<\/title>/i);
   assert.match(html, /AiSuperCam/);
   assert.match(html, /Enable camera/);
   assert.match(html, /Try demo/);
-  assert.match(html, /http:\/\/localhost\/og\.png/);
+  assert.match(
+    html,
+    /<meta property="og:image" content="https?:\/\/[^"]+\/og\.png">/,
+  );
   assert.doesNotMatch(html, /Starter Project|Building your site|react-loading-skeleton/i);
 });
 
