@@ -34,4 +34,8 @@ Images and recordings download without area borders, handles, or gesture cursors
 - React 19 + vinext
 - MediaPipe Tasks Vision, with models and WASM runtime served from `public/`
 - Canvas 2D compositing and effects
-- Cloudflare Sites hosting
+- Railway hosting with Railpack
+
+## Deploy to Railway
+
+The repository includes `railway.json`, so Railway builds with `npm run build`, starts with `npm run start`, and checks `/` before marking the deployment healthy. The server reads Railway's `PORT` environment variable automatically.
