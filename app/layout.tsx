@@ -19,9 +19,9 @@ export async function generateMetadata(): Promise<Metadata> {
   const forwardedProtocol = incoming.get("x-forwarded-proto");
   const protocol = forwardedProtocol ?? (host?.includes("localhost") ? "http" : "https");
   const origin = host ? `${protocol}://${host}` : "https://aisupercam.pages.dev";
-  const title = "AiSuperCam — effetti webcam controllati con le mani";
+  const title = "AiSuperCam — hand-controlled webcam effects";
   const description =
-    "Crea aree con due mani a L e applica effetti mesh, ASCII, termico e pixel in tempo reale, direttamente nel browser.";
+    "Frame areas with two L-shaped hands and apply Mesh, ASCII, Thermal and Pixel effects in real time, directly in your browser.";
 
   return {
     title,
@@ -37,7 +37,7 @@ export async function generateMetadata(): Promise<Metadata> {
           url: `${origin}/og.png`,
           width: 1680,
           height: 945,
-          alt: "AiSuperCam con mesh del corpo ed effetti webcam ASCII, termico e pixel",
+          alt: "AiSuperCam with body mesh, ASCII, thermal and pixel webcam effects",
         },
       ],
     },
@@ -56,7 +56,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="it">
+    <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         {children}
       </body>

@@ -6,6 +6,7 @@ import {
   CameraOff,
   CircleHelp,
   CircleStop,
+  Ellipsis,
   Grid2X2,
   Hand,
   ImageDown,
@@ -149,9 +150,9 @@ const EFFECTS: EffectDefinition[] = [
     id: "mesh",
     label: "Mesh",
     shortLabel: "Mesh",
-    description: "Volto, postura e mani",
+    description: "Face, pose and hands",
     icon: ScanFace,
-    settingLabel: "Dettaglio",
+    settingLabel: "Detail",
     min: 30,
     max: 100,
     step: 1,
@@ -160,20 +161,20 @@ const EFFECTS: EffectDefinition[] = [
     id: "ascii",
     label: "ASCII",
     shortLabel: "Aa",
-    description: "Caratteri dalla luce",
+    description: "Characters from light",
     icon: Binary,
-    settingLabel: "Dimensione",
+    settingLabel: "Character size",
     min: 7,
     max: 24,
     step: 1,
   },
   {
     id: "thermal",
-    label: "Termico",
+    label: "Thermal",
     shortLabel: "Heat",
-    description: "Falso colore e contorni",
+    description: "False color and contours",
     icon: Thermometer,
-    settingLabel: "Contrasto",
+    settingLabel: "Contrast",
     min: 20,
     max: 100,
     step: 1,
@@ -182,9 +183,9 @@ const EFFECTS: EffectDefinition[] = [
     id: "pixel",
     label: "Pixel",
     shortLabel: "Pixel",
-    description: "Mosaico regolabile",
+    description: "Adjustable mosaic",
     icon: Grid2X2,
-    settingLabel: "Pixel",
+    settingLabel: "Pixel size",
     min: 5,
     max: 38,
     step: 1,
@@ -404,7 +405,7 @@ function drawDemoCamera(
   context.fillStyle = gradient;
   context.fillRect(0, 0, width, height);
 
-  context.fillStyle = "rgba(99, 243, 211, 0.045)";
+  context.fillStyle = "rgba(255, 255, 255, 0.025)";
   for (let x = 0; x < width; x += 48) context.fillRect(x, 0, 1, height);
   for (let y = 0; y < height; y += 48) context.fillRect(0, y, width, 1);
 
@@ -576,7 +577,7 @@ export default function Home() {
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
-  const gestureLabelRef = useRef("Due L per creare");
+  const gestureLabelRef = useRef("Two Ls to create");
   const helpModalRef = useRef<HTMLElement>(null);
 
   const [status, setStatus] = useState<AppStatus>("idle");
@@ -585,8 +586,7 @@ export default function Home() {
   const [activeEffect, setActiveEffect] = useState<EffectId>("mesh");
   const [settings, setSettings] = useState(() => ({ ...DEFAULT_SETTINGS }));
   const [trackingReady, setTrackingReady] = useState(false);
-  const [trackingMessage, setTrackingMessage] = useState("In attesa");
-  const [gestureLabel, setGestureLabel] = useState("Due L per creare");
+  const [trackingMessage, setTrackingMessage] = useState("Waiting");
   const [helpOpen, setHelpOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
@@ -611,7 +611,6 @@ export default function Home() {
   const syncGestureLabel = useCallback((message: string) => {
     if (gestureLabelRef.current === message) return;
     gestureLabelRef.current = message;
-    setGestureLabel(message);
   }, []);
 
   const showToast = useCallback((message: string) => {
@@ -632,7 +631,7 @@ export default function Home() {
   const addZone = useCallback(
     (effect: EffectId, rect: Rect) => {
       if (zonesRef.current.length >= MAX_ZONES) {
-        showToast("Massimo 4 aree");
+        showToast("Up to 4 areas");
         return null;
       }
       const zone = makeZone(effect, rect);
@@ -658,7 +657,7 @@ export default function Home() {
     if (!target) return;
     syncZones(zonesRef.current.filter((zone) => zone.id !== target));
     syncSelected(null);
-    showToast("Area eliminata");
+    showToast("Area deleted");
   }, [showToast, syncSelected, syncZones]);
 
   const resetGestureState = useCallback(() => {
@@ -671,14 +670,14 @@ export default function Home() {
     lLatchedRef.current = false;
     lReleaseSinceRef.current = null;
     gestureCooldownRef.current = 0;
-    syncGestureLabel("Due L per creare");
+    syncGestureLabel("Two Ls to create");
   }, [syncGestureLabel]);
 
   const clearZones = useCallback(() => {
     syncZones([]);
     syncSelected(null);
     resetGestureState();
-    showToast("Aree azzerate");
+    showToast("Areas cleared");
   }, [resetGestureState, showToast, syncSelected, syncZones]);
 
   const createCenteredZone = useCallback(() => {
@@ -692,7 +691,7 @@ export default function Home() {
       const target = selectedIdRef.current;
       if (target) {
         updateZone(target, (zone) => ({ ...zone, effect }));
-        showToast(`Area impostata su ${effectById(effect).label}`);
+        showToast(`Area set to ${effectById(effect).label}`);
       }
     },
     [showToast, updateZone],
@@ -786,13 +785,13 @@ export default function Home() {
   const initialiseVision = useCallback(async (session: number) => {
     closeModels();
     let models: VisionModels;
-    let message = "Gesture attive";
+    let message = "Hand tracking on";
     try {
       models = await createVisionModels("GPU");
     } catch {
       if (session !== sessionGenerationRef.current) return false;
       models = await createVisionModels("CPU");
-      message = "Gesture attive · CPU";
+      message = "Hand tracking on · CPU";
     }
     if (session !== sessionGenerationRef.current) {
       models.hand.close();
@@ -810,7 +809,7 @@ export default function Home() {
     const session = sessionGenerationRef.current + 1;
     sessionGenerationRef.current = session;
     setStatus("starting-camera");
-    setTrackingMessage("Avvio fotocamera");
+    setTrackingMessage("Starting camera");
     setTrackingReady(false);
     resetGestureState();
     stopCamera();
@@ -849,7 +848,7 @@ export default function Home() {
       }
       setCanvasAspect(`${sourceWidth} / ${sourceHeight}`);
       setStatus("starting-ai");
-      setTrackingMessage("Preparo il rilevamento");
+      setTrackingMessage("Loading hand tracking");
 
       try {
         await initialiseVision(session);
@@ -857,13 +856,16 @@ export default function Home() {
         if (session !== sessionGenerationRef.current) return;
         console.error("Vision initialisation failed", error);
         setTrackingReady(false);
-        setTrackingMessage("Controllo con mouse");
-        showToast("Gesture non disponibili: puoi usare mouse o touch");
+        setTrackingMessage("Mouse control");
+        showToast("Hand tracking unavailable — use mouse or touch");
       }
       if (session !== sessionGenerationRef.current) return;
       syncZones([]);
       syncSelected(null);
       setStatus("ready");
+      if (modelsRef.current) {
+        showToast("Hold two Ls to create · pinch to edit");
+      }
     } catch (error) {
       if (session !== sessionGenerationRef.current) return;
       console.error("Camera access failed", error);
@@ -871,7 +873,7 @@ export default function Home() {
       setStatus(
         name === "NotAllowedError" || name === "SecurityError" ? "denied" : "error",
       );
-      setTrackingMessage("Fotocamera non disponibile");
+      setTrackingMessage("Camera unavailable");
     }
   }, [closeModels, initialiseVision, resetGestureState, showToast, stopCamera, syncSelected, syncZones]);
 
@@ -881,7 +883,7 @@ export default function Home() {
     closeModels();
     resetGestureState();
     setTrackingReady(false);
-    setTrackingMessage("Modalità demo");
+    setTrackingMessage("Demo mode");
     setCanvasAspect("16 / 9");
     if (canvasRef.current) {
       canvasRef.current.width = 1280;
@@ -897,7 +899,7 @@ export default function Home() {
     syncZones([mesh, thermal]);
     syncSelected(mesh.id);
     setStatus("demo");
-    showToast("Trascina sul video per creare altre aree");
+    showToast("Drag on the video to create another area");
   }, [closeModels, makeZone, resetGestureState, showToast, stopCamera, syncSelected, syncZones]);
 
   const pointFromPointer = useCallback(
@@ -1067,7 +1069,7 @@ export default function Home() {
   const finishGestureOperation = useCallback(() => {
     gestureOperationRef.current = { kind: "idle" };
     gestureCooldownRef.current = performance.now() + 350;
-    syncGestureLabel("Due L per creare");
+    syncGestureLabel("Two Ls to create");
   }, [syncGestureLabel]);
 
   const applyGestureTracks = useCallback(
@@ -1142,7 +1144,7 @@ export default function Home() {
             startPoints: [primary.cursor, second.cursor],
             startRect: targetZone.rect,
           };
-          syncGestureLabel("Due pinch · ridimensiona");
+          syncGestureLabel("Two pinches · resize");
           return;
         }
 
@@ -1165,13 +1167,13 @@ export default function Home() {
               y: operation.startRect.y + deltaY,
             }),
           }));
-          syncGestureLabel("Pinch · sposta");
+          syncGestureLabel("Pinch · move");
         } else {
           updateZone(operation.zoneId, (zone) => ({
             ...zone,
             rect: clampRect(rectBetween(operation.fixed, primary.cursor)),
           }));
-          syncGestureLabel("Pinch · ridimensiona");
+          syncGestureLabel("Pinch · resize");
         }
         return;
       }
@@ -1195,7 +1197,7 @@ export default function Home() {
             corner: target.corner,
             fixed: oppositeCorner(target.zone.rect, target.corner),
           };
-          syncGestureLabel("Pinch · ridimensiona");
+          syncGestureLabel("Pinch · resize");
         } else {
           gestureOperationRef.current = {
             kind: "move",
@@ -1204,7 +1206,7 @@ export default function Home() {
             startPointer: track.cursor,
             startRect: target.zone.rect,
           };
-          syncGestureLabel("Pinch · sposta");
+          syncGestureLabel("Pinch · move");
         }
         creationPreviewRef.current = null;
         lStableRef.current = null;
@@ -1236,8 +1238,8 @@ export default function Home() {
       if (lTracks.length < 2) {
         creationPreviewRef.current = null;
         lStableRef.current = null;
-        if (tracks.length > 0) syncGestureLabel("Forma due L");
-        else syncGestureLabel("Due L per creare");
+        if (tracks.length > 0) syncGestureLabel("Make two Ls");
+        else syncGestureLabel("Two Ls to create");
         return;
       }
 
@@ -1255,7 +1257,9 @@ export default function Home() {
         creationPreviewRef.current = { rect, progress: 0 };
         lStableRef.current = null;
         syncGestureLabel(
-          zonesRef.current.length >= MAX_ZONES ? "Massimo 4 aree" : "Allarga le L",
+          zonesRef.current.length >= MAX_ZONES
+            ? "Up to 4 areas"
+            : "Move the Ls apart",
         );
         return;
       }
@@ -1277,7 +1281,7 @@ export default function Home() {
       lStableRef.current = { rect, pairKey, stableSince, lastAt: now };
       const progress = clamp((now - stableSince) / 560, 0, 1);
       creationPreviewRef.current = { rect, progress };
-      syncGestureLabel(progress > 0.1 ? "Mantieni le L" : "Area in anteprima");
+      syncGestureLabel(progress > 0.1 ? "Hold the Ls" : "Area preview");
 
       if (progress >= 1) {
         const zone = addZone(activeEffectRef.current, rect);
@@ -1285,7 +1289,7 @@ export default function Home() {
           lLatchedRef.current = true;
           creationPreviewRef.current = null;
           lStableRef.current = null;
-          syncGestureLabel("Area creata");
+          syncGestureLabel("Area created");
           gestureCooldownRef.current = now + 400;
         }
       }
@@ -1544,7 +1548,7 @@ export default function Home() {
       context.restore();
     };
 
-    const drawZoneChrome = (zone: Zone, index: number) => {
+    const drawZoneChrome = (zone: Zone) => {
       const width = canvas.width;
       const height = canvas.height;
       const x = zone.rect.x * width;
@@ -1552,7 +1556,7 @@ export default function Home() {
       const zoneWidth = zone.rect.w * width;
       const zoneHeight = zone.rect.h * height;
       const selected = zone.id === selectedIdRef.current;
-      const accent = selected ? "rgba(99,243,211,.94)" : "rgba(235,244,242,.34)";
+      const accent = selected ? "rgba(255,255,255,.94)" : "rgba(255,255,255,.28)";
 
       context.save();
       roundedRectPath(context, x, y, zoneWidth, zoneHeight, Math.max(10, width / 90));
@@ -1562,20 +1566,9 @@ export default function Home() {
       context.stroke();
       context.setLineDash([]);
 
-      const badge = `${String(index + 1).padStart(2, "0")}  ${effectById(zone.effect).label.toUpperCase()}`;
-      context.font = `600 ${Math.max(11, width / 92)}px var(--font-geist-mono), monospace`;
-      const badgeWidth = context.measureText(badge).width + 22;
-      context.fillStyle = selected ? "rgba(8,14,15,.88)" : "rgba(8,10,12,.7)";
-      context.beginPath();
-      context.roundRect(x + 10, y + 10, badgeWidth, Math.max(25, width / 40), 8);
-      context.fill();
-      context.fillStyle = selected ? "#bffff1" : "rgba(242,247,246,.66)";
-      context.textBaseline = "middle";
-      context.fillText(badge, x + 21, y + 10 + Math.max(25, width / 40) / 2);
-
       if (selected) {
-        context.fillStyle = "#dffff8";
-        context.strokeStyle = "rgba(8,12,13,.78)";
+        context.fillStyle = "#ffffff";
+        context.strokeStyle = "rgba(0,0,0,.72)";
         context.lineWidth = 2;
         for (const point of Object.values(cornersForRect(zone.rect))) {
           context.beginPath();
@@ -1598,9 +1591,9 @@ export default function Home() {
       const zoneHeight = preview.rect.h * height;
       const bracket = Math.min(38, zoneWidth * 0.2, zoneHeight * 0.2);
       context.save();
-      context.fillStyle = "rgba(99,243,211,.055)";
+      context.fillStyle = "rgba(255,255,255,.045)";
       context.fillRect(x, y, zoneWidth, zoneHeight);
-      context.strokeStyle = "rgba(99,243,211,.96)";
+      context.strokeStyle = "rgba(255,255,255,.96)";
       context.lineWidth = Math.max(2.5, width / 520);
       context.lineCap = "round";
       context.beginPath();
@@ -1621,7 +1614,7 @@ export default function Home() {
       const center = rectCenter(preview.rect);
       context.beginPath();
       context.arc(center.x * width, center.y * height, 18, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * preview.progress);
-      context.strokeStyle = "#e6fff9";
+      context.strokeStyle = "#ffffff";
       context.lineWidth = 4;
       context.stroke();
       context.restore();
@@ -1637,13 +1630,13 @@ export default function Home() {
         const y = track.cursor.y * height;
         context.beginPath();
         context.arc(x, y, track.pinched ? 13 : 8, 0, Math.PI * 2);
-        context.strokeStyle = track.pinched ? "#e6fff9" : "rgba(99,243,211,.68)";
+        context.strokeStyle = track.pinched ? "#ffffff" : "rgba(255,255,255,.68)";
         context.lineWidth = track.pinched ? 3 : 2;
         context.stroke();
         if (track.isL) {
           const cornerX = track.lCorner.x * width;
           const cornerY = track.lCorner.y * height;
-          context.fillStyle = "#63f3d3";
+          context.fillStyle = "#ffffff";
           context.beginPath();
           context.arc(cornerX, cornerY, 5, 0, Math.PI * 2);
           context.fill();
@@ -1804,7 +1797,7 @@ export default function Home() {
             gestureTracksRef.current = [];
             gestureOperationRef.current = { kind: "idle" };
             setTrackingReady(false);
-            setTrackingMessage("Controllo con mouse");
+            setTrackingMessage("Mouse control");
           }
         }
       }
@@ -1841,7 +1834,7 @@ export default function Home() {
         context.drawImage(output, 0, 0, width, height);
       }
 
-      zonesRef.current.forEach((zone, index) => drawZoneChrome(zone, index));
+      zonesRef.current.forEach((zone) => drawZoneChrome(zone));
       drawCreationPreview();
       drawGestureCursors();
       animationFrame = requestAnimationFrame(render);
@@ -1992,7 +1985,7 @@ export default function Home() {
       anchor.download = `aisupercam-${Date.now()}.png`;
       anchor.click();
       URL.revokeObjectURL(url);
-      showToast("Immagine salvata");
+      showToast("Image saved");
     }, "image/png");
   }, [showToast]);
 
@@ -2003,7 +1996,7 @@ export default function Home() {
       typeof MediaRecorder === "undefined" ||
       typeof canvas.captureStream !== "function"
     ) {
-      showToast("Registrazione non supportata dal browser");
+      showToast("Recording is not supported in this browser");
       return;
     }
     if (recorderRef.current?.state === "recording") {
@@ -2026,7 +2019,7 @@ export default function Home() {
       );
     } catch {
       canvasStream.getTracks().forEach((track) => track.stop());
-      showToast("Registrazione non supportata dal browser");
+      showToast("Recording is not supported in this browser");
       return;
     }
     recordingChunksRef.current = [];
@@ -2044,12 +2037,12 @@ export default function Home() {
       anchor.click();
       URL.revokeObjectURL(url);
       canvasStream.getTracks().forEach((track) => track.stop());
-      showToast("Video salvato");
+      showToast("Video saved");
     };
     recorderRef.current = recorder;
     recorder.start();
     setRecording(true);
-    showToast("Registrazione avviata");
+    showToast("Recording started");
   }, [showToast]);
 
   const selectedZone = zones.find((zone) => zone.id === selectedId) ?? null;
@@ -2059,254 +2052,221 @@ export default function Home() {
 
   return (
     <main className="app-shell">
-      <video ref={videoRef} className="source-video" muted playsInline aria-hidden="true" />
+      <video
+        ref={videoRef}
+        className="source-video"
+        muted
+        playsInline
+        aria-hidden="true"
+      />
 
-      <div className="studio-frame">
-        <aside className="effect-rail" aria-label="Effetti e strumenti">
-          <div className="brand-mark" aria-label="AiSuperCam">
-            <Sparkles size={18} strokeWidth={1.8} />
-            <span>ASC</span>
-          </div>
+      <section className="camera-panel" aria-label="AiSuperCam studio">
+        <div className="camera-stage" style={{ aspectRatio: canvasAspect }}>
+          <canvas
+            ref={canvasRef}
+            width={1280}
+            height={720}
+            className="camera-canvas"
+            onPointerDown={onCanvasPointerDown}
+            onPointerMove={onCanvasPointerMove}
+            onPointerUp={onCanvasPointerUp}
+            onPointerCancel={onCanvasPointerUp}
+            tabIndex={0}
+            aria-label="Interactive webcam. Drag to create an area, drag inside an area to move it, or drag a corner to resize it."
+          />
 
-          <nav className="effect-list" aria-label="Scegli un effetto">
-            {EFFECTS.map((effect, index) => {
-              const Icon = effect.icon;
-              const pressed = contextualEffect === effect.id;
-              return (
-                <button
-                  key={effect.id}
-                  className={`effect-button ${pressed ? "is-active" : ""}`}
-                  type="button"
-                  onClick={() => chooseEffect(effect.id)}
-                  aria-pressed={pressed}
-                  title={`${effect.label} · tasto ${index + 1}`}
-                >
-                  <Icon size={22} strokeWidth={1.7} />
-                  <span>{effect.shortLabel}</span>
-                  <kbd>{index + 1}</kbd>
-                </button>
-              );
-            })}
-          </nav>
+          {isStudioActive && (
+            <div className="camera-toolbar">
+              <span
+                className={`status-light ${status === "ready" ? "is-live" : ""}`}
+                role="status"
+                aria-label={status === "ready" ? trackingMessage : "Demo mode"}
+                title={status === "ready" ? trackingMessage : "Demo mode"}
+              />
 
-          <div className="rail-actions">
-            <button
-              className="rail-icon-button"
-              type="button"
-              onClick={clearZones}
-              disabled={zones.length === 0}
-              aria-label="Azzera tutte le aree"
-              title="Azzera · R"
-            >
-              <RotateCcw size={19} />
-            </button>
-            <button
-              className="rail-icon-button"
-              type="button"
-              onClick={() => setHelpOpen(true)}
-              aria-label="Apri la guida"
-            >
-              <CircleHelp size={20} />
-            </button>
-          </div>
-        </aside>
-
-        <section className="camera-panel" aria-label="Studio AiSuperCam">
-          <header className="studio-header">
-            <div className="product-title">
-              <span className="eyebrow">GESTURE LENSES</span>
-              <h1>AiSuperCam</h1>
-            </div>
-
-            <div className="status-cluster" aria-live="polite">
-              <span className={`status-pill status-${status}`}>
-                <span className="status-dot" />
-                {status === "ready"
-                  ? trackingMessage
-                  : status === "demo"
-                    ? "Modalità demo"
-                    : status.startsWith("starting")
-                      ? trackingMessage
-                      : "Camera offline"}
-              </span>
-              {isStudioActive && (
-                <span className="zone-counter">
-                  {zones.length}/{MAX_ZONES} AREE
-                </span>
-              )}
-            </div>
-          </header>
-
-          <div className="camera-stage" style={{ aspectRatio: canvasAspect }}>
-            <canvas
-              ref={canvasRef}
-              width={1280}
-              height={720}
-              className="camera-canvas"
-              onPointerDown={onCanvasPointerDown}
-              onPointerMove={onCanvasPointerMove}
-              onPointerUp={onCanvasPointerUp}
-              onPointerCancel={onCanvasPointerUp}
-              tabIndex={0}
-              aria-label="Webcam interattiva. Trascina per creare un’area; trascina un’area per spostarla e i suoi angoli per ridimensionarla."
-            />
-
-            {isStudioActive && (
-              <div className="stage-topbar">
-                <div className="zone-tabs" aria-label="Aree create">
-                  {zones.map((zone, index) => (
+              <nav className="effect-list" aria-label="Choose an effect">
+                {EFFECTS.map((effect, index) => {
+                  const Icon = effect.icon;
+                  const pressed = contextualEffect === effect.id;
+                  return (
                     <button
-                      key={zone.id}
+                      key={effect.id}
+                      className={`effect-button effect-${effect.id} ${pressed ? "is-active" : ""}`}
                       type="button"
-                      className={`zone-tab ${zone.id === selectedId ? "is-selected" : ""}`}
-                      onClick={() => syncSelected(zone.id)}
-                      aria-label={`Area ${index + 1}, effetto ${effectById(zone.effect).label}`}
+                      onClick={() => chooseEffect(effect.id)}
+                      aria-pressed={pressed}
+                      aria-label={effect.label}
+                      title={`${effect.label} · key ${index + 1}`}
                     >
-                      <span>{String(index + 1).padStart(2, "0")}</span>
-                      {effectById(zone.effect).label}
+                      <Icon size={19} strokeWidth={1.8} />
+                      <span className="visually-hidden">{effect.label}</span>
                     </button>
-                  ))}
-                </div>
+                  );
+                })}
+              </nav>
 
-                <div className="capture-actions">
-                  <button type="button" onClick={captureSnapshot} aria-label="Salva immagine">
-                    <ImageDown size={18} />
+              <span className="toolbar-divider" aria-hidden="true" />
+
+              <label className="strength-control">
+                <span className="visually-hidden">
+                  {contextualDefinition.label}: {contextualDefinition.settingLabel}
+                </span>
+                <input
+                  type="range"
+                  min={contextualDefinition.min}
+                  max={contextualDefinition.max}
+                  step={contextualDefinition.step}
+                  value={settings[contextualEffect]}
+                  aria-label={`${contextualDefinition.label}: ${contextualDefinition.settingLabel}`}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    setSettings((current) => ({
+                      ...current,
+                      [contextualEffect]: value,
+                    }));
+                  }}
+                />
+              </label>
+
+              <span
+                className="zone-count"
+                aria-label={`${zones.length} of ${MAX_ZONES} areas`}
+                title="Areas"
+              >
+                {zones.length}/{MAX_ZONES}
+              </span>
+
+              {selectedZone && (
+                <button
+                  className="toolbar-button is-danger"
+                  type="button"
+                  onClick={deleteSelected}
+                  aria-label="Delete selected area"
+                  title="Delete selected area"
+                >
+                  <Trash2 size={17} />
+                </button>
+              )}
+
+              <button
+                className={`toolbar-button record-button ${recording ? "is-recording" : ""}`}
+                type="button"
+                onClick={toggleRecording}
+                aria-label={recording ? "Stop recording" : "Record video"}
+                title={recording ? "Stop recording" : "Record video"}
+              >
+                {recording ? <CircleStop size={18} /> : <Video size={18} />}
+              </button>
+
+              <details className="toolbar-more">
+                <summary aria-label="More actions" title="More actions">
+                  <Ellipsis size={20} />
+                </summary>
+                <div className="toolbar-menu">
+                  <button type="button" onClick={captureSnapshot}>
+                    <ImageDown size={17} />
+                    Save image
                   </button>
                   <button
                     type="button"
-                    className={recording ? "is-recording" : ""}
-                    onClick={toggleRecording}
-                    aria-label={recording ? "Ferma registrazione" : "Registra video"}
+                    onClick={clearZones}
+                    disabled={zones.length === 0}
                   >
-                    {recording ? <CircleStop size={18} /> : <Video size={18} />}
+                    <RotateCcw size={17} />
+                    Clear areas
+                  </button>
+                  <button type="button" onClick={() => setHelpOpen(true)}>
+                    <CircleHelp size={17} />
+                    Gesture guide
                   </button>
                 </div>
-              </div>
-            )}
+              </details>
+            </div>
+          )}
 
-            {isStudioActive && (
-              <div className="context-control">
-                <div>
-                  <span className="control-kicker">
-                    {selectedZone ? "REGOLAZIONE EFFETTO" : "PROSSIMA AREA"}
-                  </span>
-                  <strong>{contextualDefinition.label}</strong>
+          {status === "idle" && (
+            <div className="start-overlay">
+              <div className="start-card">
+                <div className="start-brand">
+                  <Sparkles size={17} />
+                  <span>AiSuperCam</span>
                 </div>
-                <label>
-                  <span>{contextualDefinition.settingLabel}</span>
-                  <input
-                    type="range"
-                    min={contextualDefinition.min}
-                    max={contextualDefinition.max}
-                    step={contextualDefinition.step}
-                    value={settings[contextualEffect]}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      setSettings((current) => ({
-                        ...current,
-                        [contextualEffect]: value,
-                      }));
-                    }}
-                  />
-                </label>
-                {selectedZone && (
-                  <button type="button" onClick={deleteSelected} aria-label="Elimina area selezionata">
-                    <Trash2 size={17} />
+                <h1>Draw an area with two L-shaped hands.</h1>
+                <div className="start-actions">
+                  <button
+                    className="primary-button"
+                    type="button"
+                    onClick={activateCamera}
+                  >
+                    <Camera size={17} />
+                    Enable camera
                   </button>
-                )}
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={startDemo}
+                  >
+                    Try demo
+                  </button>
+                </div>
+                <small>Processed on this device.</small>
               </div>
-            )}
+            </div>
+          )}
 
-            {isStudioActive && (
-              <div className="gesture-hint">
-                {trackingReady ? <Hand size={16} /> : <MousePointer2 size={16} />}
+          {(status === "starting-camera" || status === "starting-ai") && (
+            <div className="loading-overlay" aria-live="polite">
+              <LoaderCircle className="spinner" size={21} />
+              <div>
+                <strong>
+                  {status === "starting-camera"
+                    ? "Starting camera"
+                    : "Loading hand tracking"}
+                </strong>
                 <span>
-                  {trackingReady
-                    ? `${gestureLabel} · pinch per modificare`
-                    : "Trascina per creare · trascina dentro per spostare"}
+                  {status === "starting-ai"
+                    ? "Face, pose and hands stay on this device"
+                    : "Waiting for browser permission"}
                 </span>
               </div>
-            )}
-
-            {status === "idle" && (
-              <div className="start-overlay">
-                <div className="start-card">
-                  <div className="start-icon"><Camera size={24} /></div>
-                  <span className="eyebrow">LOCALE · IN TEMPO REALE</span>
-                  <h2>Disegna con le mani.<br />Trasforma la camera.</h2>
-                  <p>
-                    Crea aree con due mani a L. Spostale e ridimensionale con un pinch.
-                  </p>
-                  <div className="start-actions">
-                    <button className="primary-button" type="button" onClick={activateCamera}>
-                      <Camera size={18} />
-                      Attiva fotocamera
-                    </button>
-                    <button className="secondary-button" type="button" onClick={startDemo}>
-                      Prova la demo
-                    </button>
-                  </div>
-                  <small>Nessun frame viene inviato o salvato.</small>
-                </div>
-              </div>
-            )}
-
-            {(status === "starting-camera" || status === "starting-ai") && (
-              <div className="loading-overlay" aria-live="polite">
-                <LoaderCircle className="spinner" size={25} />
-                <div>
-                  <strong>
-                    {status === "starting-camera" ? "Avvio fotocamera" : "Preparo il rilevamento"}
-                  </strong>
-                  <span>{status === "starting-ai" ? "Carico volto, postura e mani" : "Attendo il permesso del browser"}</span>
-                </div>
-              </div>
-            )}
-
-            {(status === "denied" || status === "error") && (
-              <div className="start-overlay">
-                <div className="start-card error-card">
-                  <div className="start-icon"><CameraOff size={24} /></div>
-                  <span className="eyebrow">CAMERA OFFLINE</span>
-                  <h2>
-                    {status === "denied"
-                      ? "Accesso alla fotocamera bloccato"
-                      : "Nessuna fotocamera disponibile"}
-                  </h2>
-                  <p>
-                    {status === "denied"
-                      ? "Consenti l’accesso nelle impostazioni del browser oppure continua con la modalità demo."
-                      : "Controlla che una fotocamera sia collegata oppure continua con la modalità demo."}
-                  </p>
-                  <div className="start-actions">
-                    <button className="primary-button" type="button" onClick={activateCamera}>
-                      Riprova
-                    </button>
-                    <button className="secondary-button" type="button" onClick={startDemo}>
-                      Modalità demo
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <footer className="studio-footer">
-            <div className="footer-instruction">
-              <Maximize2 size={15} />
-              <span>Due L creano</span>
-              <span className="separator" />
-              <Hand size={15} />
-              <span>Pinch modifica</span>
             </div>
-            <div className="shortcut-list" aria-label="Scorciatoie">
-              <span><kbd>C</kbd> nuova area</span>
-              <span><kbd>R</kbd> reset</span>
-              <span><kbd>DEL</kbd> elimina</span>
+          )}
+
+          {(status === "denied" || status === "error") && (
+            <div className="start-overlay">
+              <div className="start-card error-card">
+                <CameraOff size={23} />
+                <h1>
+                  {status === "denied"
+                    ? "Camera access is blocked."
+                    : "No camera was found."}
+                </h1>
+                <p>
+                  {status === "denied"
+                    ? "Allow camera access in your browser settings, or continue in demo mode."
+                    : "Connect a camera, or continue in demo mode."}
+                </p>
+                <div className="start-actions">
+                  <button
+                    className="primary-button"
+                    type="button"
+                    onClick={activateCamera}
+                  >
+                    Try again
+                  </button>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={startDemo}
+                  >
+                    Try demo
+                  </button>
+                </div>
+              </div>
             </div>
-          </footer>
-        </section>
-      </div>
+          )}
+        </div>
+      </section>
 
       {helpOpen && (
         <div className="modal-backdrop">
@@ -2314,7 +2274,7 @@ export default function Home() {
             className="modal-scrim"
             type="button"
             tabIndex={-1}
-            aria-label="Chiudi guida"
+            aria-label="Close guide"
             onClick={() => setHelpOpen(false)}
           />
           <section
@@ -2325,40 +2285,52 @@ export default function Home() {
             aria-labelledby="help-title"
             tabIndex={-1}
           >
-            <button className="modal-close" type="button" onClick={() => setHelpOpen(false)} aria-label="Chiudi guida">
-              <X size={20} />
+            <button
+              className="modal-close"
+              type="button"
+              onClick={() => setHelpOpen(false)}
+              aria-label="Close guide"
+            >
+              <X size={19} />
             </button>
-            <span className="eyebrow">GESTURE GUIDE</span>
-            <h2 id="help-title">Crea con le L. Modifica con il pinch.</h2>
+            <span className="eyebrow">GESTURES</span>
+            <h2 id="help-title">Two gestures. That’s it.</h2>
             <div className="help-grid">
               <article>
                 <span>01</span>
-                <Hand size={23} />
-                <h3>Crea</h3>
-                <p>Forma una L con entrambe le mani e mantienile ferme per mezzo secondo.</p>
+                <Hand size={21} />
+                <h3>Create</h3>
+                <p>Hold an L with each hand for half a second.</p>
               </article>
               <article>
                 <span>02</span>
-                <MousePointer2 size={23} />
-                <h3>Sposta</h3>
-                <p>Fai pinch dentro un’area e muovi la mano. Rilascia per confermare.</p>
+                <MousePointer2 size={21} />
+                <h3>Move</h3>
+                <p>Pinch inside an area, then move your hand.</p>
               </article>
               <article>
                 <span>03</span>
-                <Maximize2 size={23} />
-                <h3>Ridimensiona</h3>
-                <p>Fai pinch su un angolo, oppure usa due pinch su punti opposti.</p>
+                <Maximize2 size={21} />
+                <h3>Resize</h3>
+                <p>Pinch a corner, or pinch two opposite corners.</p>
               </article>
             </div>
             <div className="fallback-note">
-              <MousePointer2 size={18} />
-              <p>Mouse e touch funzionano sempre: trascina sul video per creare, dentro per spostare e dagli angoli per ridimensionare.</p>
+              <MousePointer2 size={17} />
+              <p>
+                Mouse and touch always work: drag to create, drag inside to move,
+                and drag a corner to resize.
+              </p>
             </div>
           </section>
         </div>
       )}
 
-      {toast && <div className="toast" role="status">{toast}</div>}
+      {toast && (
+        <div className="toast" role="status">
+          {toast}
+        </div>
+      )}
     </main>
   );
 }
