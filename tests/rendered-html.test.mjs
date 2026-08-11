@@ -59,10 +59,36 @@ test("ships local vision assets and no disposable starter preview", async () => 
     assert.ok(info.size > 10_000, `${asset} should be a real bundled asset`);
   }
 
-  const page = await readFile(new URL("app/page.tsx", projectRoot), "utf8");
-  assert.match(page, /import\("@mediapipe\/tasks-vision"\)/);
-  assert.match(page, /MAX_ZONES = 4/);
-  assert.match(page, /type EffectId = "mesh" \| "ascii" \| "thermal" \| "pixel"/);
-  assert.doesNotMatch(page, /\bdemo\b/i);
+  const studio = await readFile(
+    new URL("app/_components/ai-super-cam-studio.tsx", projectRoot),
+    "utf8",
+  );
+  const config = await readFile(
+    new URL("app/_lib/studio-config.ts", projectRoot),
+    "utf8",
+  );
+  const types = await readFile(
+    new URL("app/_lib/studio-types.ts", projectRoot),
+    "utf8",
+  );
+  const visionSession = await readFile(
+    new URL("app/_hooks/use-vision-session.ts", projectRoot),
+    "utf8",
+  );
+  const renderer = await readFile(
+    new URL("app/_hooks/use-studio-renderer.ts", projectRoot),
+    "utf8",
+  );
+  const readme = await readFile(new URL("README.md", projectRoot), "utf8");
+  assert.match(visionSession, /import\("@mediapipe\/tasks-vision"\)/);
+  assert.match(visionSession, /outputSegmentationMasks: true/);
+  assert.match(renderer, /zone\.effect === "aura"/);
+  assert.match(config, /MAX_ZONES = 4/);
+  assert.match(
+    types,
+    /type EffectId = "mesh" \| "ascii" \| "thermal" \| "pixel" \| "aura"/,
+  );
+  assert.match(readme, /!\[Original AiSuperCam visual concept\]\(\.\/public\/og\.png\)/);
+  assert.doesNotMatch(studio, /\bdemo\b/i);
   await assert.rejects(access(new URL("app/_sites-preview", projectRoot)));
 });

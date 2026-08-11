@@ -21,7 +21,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const origin = host ? `${protocol}://${host}` : "https://aisupercam.pages.dev";
   const title = "AiSuperCam — hand-controlled webcam effects";
   const description =
-    "Frame areas with two L-shaped hands and apply Mesh, ASCII, Thermal and Pixel effects in real time, directly in your browser.";
+    "Frame areas with two L-shaped hands and apply Mesh, ASCII, Thermal, Pixel and Aura effects in real time, directly in your browser.";
 
   return {
     title,
@@ -37,7 +37,7 @@ export async function generateMetadata(): Promise<Metadata> {
           url: `${origin}/og.png`,
           width: 1680,
           height: 945,
-          alt: "AiSuperCam with body mesh, ASCII, thermal and pixel webcam effects",
+          alt: "Original AiSuperCam concept with body mesh, ASCII, thermal, pixel and silhouette effects",
         },
       ],
     },
