@@ -31,6 +31,11 @@ import type {
   PoseLandmarkerResult,
 } from "@mediapipe/tasks-vision";
 import {
+  asciiGlyph,
+  asciiInkColorInto,
+  asciiTone,
+} from "./ascii-effect.mjs";
+import {
   type CSSProperties,
   type ComponentType,
   type PointerEvent as ReactPointerEvent,
@@ -57,6 +62,15 @@ type Zone = {
   id: string;
   effect: EffectId;
   rect: Rect;
+};
+
+type CanvasBuffer = {
+  canvas: HTMLCanvasElement;
+  context: CanvasRenderingContext2D;
+};
+
+type ZoneSampleBuffer = CanvasBuffer & {
+  asciiLayer?: CanvasBuffer;
 };
 
 type EffectDefinition = {
@@ -202,7 +216,6 @@ const DEFAULT_SETTINGS: Record<EffectId, number> = {
 const MAX_ZONES = 4;
 const MIN_ZONE_W = 0.08;
 const MIN_ZONE_H = 0.08;
-const ASCII_RAMP = " .,:-+=*#%@";
 const THERMAL_STOPS: ReadonlyArray<readonly [number, number, number]> = [
   [5, 1, 13],
   [36, 17, 79],
@@ -1257,10 +1270,7 @@ export default function Home() {
       string,
       { x: number; y: number; confidence: number }
     >();
-    const sampleBuffers = new Map<
-      string,
-      { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D }
-    >();
+    const sampleBuffers = new Map<string, ZoneSampleBuffer>();
 
     const getSampleBuffer = (zoneId: string) => {
       const existing = sampleBuffers.get(zoneId);
@@ -1273,6 +1283,15 @@ export default function Home() {
       const buffer = { canvas: sampleCanvas, context: sampleContext };
       sampleBuffers.set(zoneId, buffer);
       return buffer;
+    };
+
+    const getAsciiLayer = (buffer: ZoneSampleBuffer) => {
+      if (buffer.asciiLayer) return buffer.asciiLayer;
+      const layerCanvas = document.createElement("canvas");
+      const layerContext = layerCanvas.getContext("2d");
+      if (!layerContext) return null;
+      buffer.asciiLayer = { canvas: layerCanvas, context: layerContext };
+      return buffer.asciiLayer;
     };
 
     const ensureEffectBuffers = (count: number) => {
@@ -1563,6 +1582,11 @@ export default function Home() {
       }
 
       if (zone.effect === "ascii") {
+        const asciiLayer = getAsciiLayer(sampleBuffer);
+        if (!asciiLayer) {
+          context.restore();
+          return;
+        }
         const backingToCss = width / Math.max(1, canvas.clientWidth || width);
         const cellSize = settingsRef.current.ascii * backingToCss;
         const columns = Math.max(4, Math.min(120, Math.floor(zoneWidth / cellSize)));
@@ -1599,26 +1623,29 @@ export default function Home() {
           0.24,
         );
 
-        context.fillStyle = "rgba(3,7,8,.62)";
+        context.fillStyle = "rgba(3,7,8,.79)";
         context.fillRect(x, y, zoneWidth, zoneHeight);
         const charWidth = zoneWidth / columns;
         const charHeight = zoneHeight / rows;
-        context.font = `${Math.ceil(charHeight * 1.04)}px "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace`;
-        context.textAlign = "left";
-        context.textBaseline = "middle";
-        context.fillStyle = "rgba(230,253,249,.96)";
-        context.shadowColor = "rgba(207,255,246,.22)";
-        context.shadowBlur = Math.max(1, charHeight * 0.12);
-        const measuredGlyph = Math.max(1, context.measureText("M").width);
+        resizeBuffer(asciiLayer.canvas, zoneWidth, zoneHeight);
+        asciiLayer.context.clearRect(0, 0, zoneWidth, zoneHeight);
+        asciiLayer.context.font = `${Math.ceil(charHeight * 1.04)}px "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace`;
+        asciiLayer.context.textAlign = "left";
+        asciiLayer.context.textBaseline = "middle";
+        asciiLayer.context.fillStyle = "#fff";
+        const measuredGlyph = Math.max(
+          1,
+          asciiLayer.context.measureText("M").width,
+        );
         const horizontalScale = charWidth / measuredGlyph;
 
-        context.save();
-        context.translate(x, y);
-        context.scale(horizontalScale, 1);
+        asciiLayer.context.save();
+        asciiLayer.context.scale(horizontalScale, 1);
         for (let row = 0; row < rows; row += 1) {
           let line = "";
           for (let column = 0; column < columns; column += 1) {
             const pixel = row * columns + column;
+            const dataIndex = pixel * 4;
             const center = normalizeLuminance(
               effectLuminance[pixel],
               range.low,
@@ -1644,12 +1671,44 @@ export default function Home() {
               range.low,
               range.high,
             );
-            const edge = clamp(Math.hypot(right - left, below - above) * 0.22, 0, 0.16);
-            const tone = clamp(0.08 + Math.pow(center, 0.76) * 0.92 + edge, 0, 1);
-            line += ASCII_RAMP[Math.round(tone * (ASCII_RAMP.length - 1))];
+            const edge = clamp(
+              Math.hypot(right - left, below - above) * 0.18,
+              0,
+              0.12,
+            );
+            const tone = asciiTone(center, edge);
+            const glyph = asciiGlyph(tone);
+            line += glyph;
+
+            if (glyph === " ") image.data[dataIndex + 3] = 0;
+            else asciiInkColorInto(image.data, dataIndex, tone);
           }
-          context.fillText(line, 0, (row + 0.52) * charHeight);
+          asciiLayer.context.fillText(line, 0, (row + 0.52) * charHeight);
         }
+        asciiLayer.context.restore();
+
+        sampleContext.putImageData(image, 0, 0);
+        asciiLayer.context.save();
+        asciiLayer.context.globalCompositeOperation = "source-in";
+        asciiLayer.context.imageSmoothingEnabled = false;
+        asciiLayer.context.drawImage(
+          sample,
+          0,
+          0,
+          columns,
+          rows,
+          0,
+          0,
+          zoneWidth,
+          zoneHeight,
+        );
+        asciiLayer.context.restore();
+
+        context.save();
+        context.shadowColor = "rgba(0,0,0,.72)";
+        context.shadowBlur =
+          charHeight / backingToCss >= 10 ? Math.max(1, charHeight * 0.07) : 0;
+        context.drawImage(asciiLayer.canvas, x, y);
         context.restore();
       }
 
