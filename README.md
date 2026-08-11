@@ -2,12 +2,14 @@
 
 A local, hand-controlled webcam playground. Create up to four areas and apply Mesh, ASCII, Thermal and Pixel effects at the same time.
 
+[Open the live demo](https://aisupercam-production.up.railway.app/)
+
 ## Run locally
 
-Requires Node.js `>=22.13.0`.
+Requires Node.js `>=22.13.0`, a modern browser with WebAssembly support, and a webcam. Camera access works on `localhost` or over HTTPS.
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -29,6 +31,12 @@ npm run typecheck
 
 Images and recordings download without area borders, handles, or gesture cursors. Webcam processing, hand tracking and rendering stay in the browser; no frame is uploaded to a server.
 
+## Troubleshooting
+
+- If camera access is blocked, allow it in the browser site settings and reload the page.
+- If hand tracking cannot start, the editor remains usable with mouse or touch controls.
+- On a deployed copy, use HTTPS so the browser can grant camera access.
+
 ## Stack
 
 - React 19 + vinext
@@ -39,3 +47,7 @@ Images and recordings download without area borders, handles, or gesture cursors
 ## Deploy to Railway
 
 The repository includes `railway.json`, so Railway builds with `npm run build`, starts with `npm run start`, and checks `/` before marking the deployment healthy. The server reads Railway's `PORT` environment variable automatically.
+
+## License
+
+[MIT](LICENSE) © 2026 Gabriele Monni. Third-party components retain their original licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md).
