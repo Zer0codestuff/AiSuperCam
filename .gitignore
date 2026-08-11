@@ -31,6 +31,16 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+.dev.vars*
+.npmrc
+.railway/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.key
+*.p12
+*.pfx
 
 # vercel
 .vercel
