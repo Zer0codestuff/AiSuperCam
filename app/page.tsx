@@ -31,6 +31,7 @@ import type {
   PoseLandmarkerResult,
 } from "@mediapipe/tasks-vision";
 import {
+  type CSSProperties,
   type ComponentType,
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -46,8 +47,7 @@ type AppStatus =
   | "starting-ai"
   | "ready"
   | "denied"
-  | "error"
-  | "demo";
+  | "error";
 
 type Point = { x: number; y: number };
 type Rect = { x: number; y: number; w: number; h: number };
@@ -161,7 +161,7 @@ const EFFECTS: EffectDefinition[] = [
     id: "ascii",
     label: "ASCII",
     shortLabel: "Aa",
-    description: "Characters from light",
+    description: "Adaptive light characters",
     icon: Binary,
     settingLabel: "Character size",
     min: 7,
@@ -172,7 +172,7 @@ const EFFECTS: EffectDefinition[] = [
     id: "thermal",
     label: "Thermal",
     shortLabel: "Heat",
-    description: "False color and contours",
+    description: "Adaptive heat map and contours",
     icon: Thermometer,
     settingLabel: "Contrast",
     min: 20,
@@ -202,7 +202,18 @@ const DEFAULT_SETTINGS: Record<EffectId, number> = {
 const MAX_ZONES = 4;
 const MIN_ZONE_W = 0.08;
 const MIN_ZONE_H = 0.08;
-const ASCII_RAMP = " .·:+*#%@";
+const ASCII_RAMP = " .,:-+=*#%@";
+const THERMAL_STOPS: ReadonlyArray<readonly [number, number, number]> = [
+  [5, 1, 13],
+  [36, 17, 79],
+  [110, 27, 118],
+  [198, 47, 101],
+  [241, 90, 58],
+  [253, 174, 50],
+  [248, 241, 122],
+  [255, 255, 255],
+];
+const BAYER_4X4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5] as const;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -328,24 +339,95 @@ function isLShape(landmarks: NormalizedLandmark[]) {
 }
 
 function thermalColor(value: number): [number, number, number] {
-  const stops: Array<[number, number, number]> = [
-    [8, 5, 25],
-    [45, 12, 95],
-    [124, 18, 145],
-    [225, 36, 116],
-    [255, 112, 58],
-    [255, 220, 92],
-    [215, 255, 224],
-  ];
-  const position = clamp(value, 0, 1) * (stops.length - 1);
+  const position = clamp(value, 0, 1) * (THERMAL_STOPS.length - 1);
   const lower = Math.floor(position);
-  const upper = Math.min(stops.length - 1, lower + 1);
+  const upper = Math.min(THERMAL_STOPS.length - 1, lower + 1);
   const amount = position - lower;
   return [
-    Math.round(stops[lower][0] + (stops[upper][0] - stops[lower][0]) * amount),
-    Math.round(stops[lower][1] + (stops[upper][1] - stops[lower][1]) * amount),
-    Math.round(stops[lower][2] + (stops[upper][2] - stops[lower][2]) * amount),
+    Math.round(
+      THERMAL_STOPS[lower][0] +
+        (THERMAL_STOPS[upper][0] - THERMAL_STOPS[lower][0]) * amount,
+    ),
+    Math.round(
+      THERMAL_STOPS[lower][1] +
+        (THERMAL_STOPS[upper][1] - THERMAL_STOPS[lower][1]) * amount,
+    ),
+    Math.round(
+      THERMAL_STOPS[lower][2] +
+        (THERMAL_STOPS[upper][2] - THERMAL_STOPS[lower][2]) * amount,
+    ),
   ];
+}
+
+const THERMAL_LUT = (() => {
+  const table = new Uint8ClampedArray(256 * 3);
+  for (let index = 0; index < 256; index += 1) {
+    const [red, green, blue] = thermalColor(index / 255);
+    table[index * 3] = red;
+    table[index * 3 + 1] = green;
+    table[index * 3 + 2] = blue;
+  }
+  return table;
+})();
+
+const THERMAL_GAMMA_LUT = (() => {
+  const table = new Float32Array(256);
+  for (let index = 0; index < table.length; index += 1) {
+    table[index] = Math.pow(index / (table.length - 1), 0.82);
+  }
+  return table;
+})();
+
+function rgbLuminance(red: number, green: number, blue: number) {
+  return (red * 0.2126 + green * 0.7152 + blue * 0.0722) / 255;
+}
+
+function adaptiveLuminanceRange(values: Float32Array, count: number) {
+  const histogram = new Uint32Array(96);
+  for (let index = 0; index < count; index += 1) {
+    const bucket = Math.min(
+      histogram.length - 1,
+      Math.floor(clamp(values[index], 0, 1) * histogram.length),
+    );
+    histogram[bucket] += 1;
+  }
+
+  const percentile = (target: number) => {
+    const threshold = count * target;
+    let seen = 0;
+    for (let index = 0; index < histogram.length; index += 1) {
+      seen += histogram[index];
+      if (seen >= threshold) return index / (histogram.length - 1);
+    }
+    return 1;
+  };
+
+  let low = percentile(0.04);
+  let high = percentile(0.97);
+  if (high - low < 0.16) {
+    const middle = (low + high) / 2;
+    low = clamp(middle - 0.08, 0, 0.84);
+    high = clamp(middle + 0.08, 0.16, 1);
+  }
+  return { low, high };
+}
+
+function normalizeLuminance(value: number, low: number, high: number) {
+  return clamp((value - low) / Math.max(0.08, high - low), 0, 1);
+}
+
+function estimatedSkinWarmth(red: number, green: number, blue: number) {
+  const cb = 128 - red * 0.168736 - green * 0.331264 + blue * 0.5;
+  const cr = 128 + red * 0.5 - green * 0.418688 - blue * 0.081312;
+  const cbDistance = (cb - 108) / 24;
+  const crDistance = (cr - 152) / 30;
+  const chromaMatch = clamp(
+    1 - (cbDistance * cbDistance + crDistance * crDistance) * 0.3,
+    0,
+    1,
+  );
+  const light = rgbLuminance(red, green, blue);
+  return chromaMatch * clamp((light - 0.04) / 0.28, 0, 1);
 }
 
 function roundedRectPath(
@@ -389,157 +471,6 @@ function drawConnections(
   context.lineCap = "round";
   context.lineJoin = "round";
   context.stroke();
-}
-
-function drawDemoCamera(
-  context: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  time: number,
-) {
-  const drift = Math.sin(time / 1800) * width * 0.018;
-  const gradient = context.createLinearGradient(0, 0, width, height);
-  gradient.addColorStop(0, "#15212a");
-  gradient.addColorStop(0.45, "#11171d");
-  gradient.addColorStop(1, "#090b0e");
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, width, height);
-
-  context.fillStyle = "rgba(255, 255, 255, 0.025)";
-  for (let x = 0; x < width; x += 48) context.fillRect(x, 0, 1, height);
-  for (let y = 0; y < height; y += 48) context.fillRect(0, y, width, 1);
-
-  context.save();
-  context.translate(drift, 0);
-  const centerX = width * 0.52;
-  const headY = height * 0.26;
-  const headRadius = height * 0.095;
-  const bodyGradient = context.createLinearGradient(
-    centerX,
-    headY,
-    centerX,
-    height * 0.95,
-  );
-  bodyGradient.addColorStop(0, "#c9d0d2");
-  bodyGradient.addColorStop(1, "#5b6269");
-  context.fillStyle = bodyGradient;
-  context.beginPath();
-  context.ellipse(centerX, headY, headRadius * 0.78, headRadius, 0, 0, Math.PI * 2);
-  context.fill();
-  context.beginPath();
-  context.roundRect(
-    centerX - width * 0.105,
-    height * 0.36,
-    width * 0.21,
-    height * 0.43,
-    height * 0.09,
-  );
-  context.fill();
-
-  context.strokeStyle = "#9ca5aa";
-  context.lineWidth = height * 0.065;
-  context.lineCap = "round";
-  context.beginPath();
-  context.moveTo(centerX - width * 0.08, height * 0.43);
-  context.lineTo(width * 0.28, height * 0.62);
-  context.lineTo(width * 0.2, height * 0.48);
-  context.moveTo(centerX + width * 0.08, height * 0.43);
-  context.lineTo(width * 0.75, height * 0.58);
-  context.lineTo(width * 0.82, height * 0.4);
-  context.stroke();
-
-  context.fillStyle = "#171c21";
-  context.beginPath();
-  context.arc(centerX - headRadius * 0.28, headY - 5, 4, 0, Math.PI * 2);
-  context.arc(centerX + headRadius * 0.28, headY - 5, 4, 0, Math.PI * 2);
-  context.fill();
-  context.restore();
-
-  const vignette = context.createRadialGradient(
-    width / 2,
-    height / 2,
-    height * 0.2,
-    width / 2,
-    height / 2,
-    width * 0.72,
-  );
-  vignette.addColorStop(0, "rgba(0,0,0,0)");
-  vignette.addColorStop(1, "rgba(0,0,0,.62)");
-  context.fillStyle = vignette;
-  context.fillRect(0, 0, width, height);
-}
-
-function drawDemoMesh(
-  context: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  time: number,
-) {
-  const drift = Math.sin(time / 1800) * width * 0.018;
-  const cx = width * 0.52 + drift;
-  const faceY = height * 0.26;
-  const faceRx = height * 0.074;
-  const faceRy = height * 0.095;
-
-  context.strokeStyle = "rgba(99,243,211,.82)";
-  context.fillStyle = "rgba(218,255,248,.94)";
-  context.lineWidth = Math.max(1, width / 780);
-  for (let row = -4; row <= 4; row += 1) {
-    const normalizedY = row / 4;
-    const rowWidth = faceRx * Math.sqrt(Math.max(0, 1 - normalizedY * normalizedY));
-    context.beginPath();
-    context.ellipse(cx, faceY + normalizedY * faceRy, rowWidth, faceRy * 0.11, 0, 0, Math.PI * 2);
-    context.stroke();
-  }
-  for (let column = -4; column <= 4; column += 1) {
-    context.beginPath();
-    context.moveTo(cx + (column / 4) * faceRx * 0.35, faceY - faceRy);
-    context.quadraticCurveTo(
-      cx + (column / 4) * faceRx * 1.4,
-      faceY,
-      cx + (column / 4) * faceRx * 0.35,
-      faceY + faceRy,
-    );
-    context.stroke();
-  }
-
-  const joints: Point[] = [
-    { x: cx / width, y: 0.39 },
-    { x: 0.44 + drift / width, y: 0.43 },
-    { x: 0.29, y: 0.61 },
-    { x: 0.2, y: 0.48 },
-    { x: 0.6 + drift / width, y: 0.43 },
-    { x: 0.75, y: 0.58 },
-    { x: 0.82, y: 0.4 },
-    { x: 0.47 + drift / width, y: 0.78 },
-    { x: 0.42 + drift / width, y: 0.95 },
-    { x: 0.57 + drift / width, y: 0.78 },
-    { x: 0.62 + drift / width, y: 0.95 },
-  ];
-  const links = [
-    [0, 1],
-    [1, 2],
-    [2, 3],
-    [0, 4],
-    [4, 5],
-    [5, 6],
-    [1, 7],
-    [4, 9],
-    [7, 8],
-    [9, 10],
-  ];
-  context.lineWidth = Math.max(2, width / 460);
-  context.beginPath();
-  for (const [start, end] of links) {
-    context.moveTo(joints[start].x * width, joints[start].y * height);
-    context.lineTo(joints[end].x * width, joints[end].y * height);
-  }
-  context.stroke();
-  for (const joint of joints) {
-    context.beginPath();
-    context.arc(joint.x * width, joint.y * height, Math.max(2.5, width / 360), 0, Math.PI * 2);
-    context.fill();
-  }
 }
 
 export default function Home() {
@@ -590,7 +521,7 @@ export default function Home() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
-  const [canvasAspect, setCanvasAspect] = useState("16 / 9");
+  const [canvasAspect, setCanvasAspect] = useState(16 / 9);
 
   const syncZones = useCallback((nextZones: Zone[]) => {
     zonesRef.current = nextZones;
@@ -846,7 +777,7 @@ export default function Home() {
         canvasRef.current.width = width;
         canvasRef.current.height = height;
       }
-      setCanvasAspect(`${sourceWidth} / ${sourceHeight}`);
+      setCanvasAspect(sourceWidth / sourceHeight);
       setStatus("starting-ai");
       setTrackingMessage("Loading hand tracking");
 
@@ -876,31 +807,6 @@ export default function Home() {
       setTrackingMessage("Camera unavailable");
     }
   }, [closeModels, initialiseVision, resetGestureState, showToast, stopCamera, syncSelected, syncZones]);
-
-  const startDemo = useCallback(() => {
-    sessionGenerationRef.current += 1;
-    stopCamera();
-    closeModels();
-    resetGestureState();
-    setTrackingReady(false);
-    setTrackingMessage("Demo mode");
-    setCanvasAspect("16 / 9");
-    if (canvasRef.current) {
-      canvasRef.current.width = 1280;
-      canvasRef.current.height = 720;
-    }
-    const mesh = makeZone("mesh", { x: 0.17, y: 0.12, w: 0.42, h: 0.72 });
-    const thermal = makeZone("thermal", {
-      x: 0.62,
-      y: 0.23,
-      w: 0.25,
-      h: 0.39,
-    });
-    syncZones([mesh, thermal]);
-    syncSelected(mesh.id);
-    setStatus("demo");
-    showToast("Drag on the video to create another area");
-  }, [closeModels, makeZone, resetGestureState, showToast, stopCamera, syncSelected, syncZones]);
 
   const pointFromPointer = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>): Point => {
@@ -937,9 +843,7 @@ export default function Home() {
 
   const onCanvasPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
-      if (status === "idle" || status.startsWith("starting") || status === "denied") {
-        return;
-      }
+      if (status !== "ready") return;
       event.currentTarget.setPointerCapture(event.pointerId);
       gestureOperationRef.current = { kind: "idle" };
       lStableRef.current = null;
@@ -1322,13 +1226,11 @@ export default function Home() {
     if (!context) return;
 
     const source = document.createElement("canvas");
-    const sample = document.createElement("canvas");
     const output = outputCanvasRef.current ?? document.createElement("canvas");
     outputCanvasRef.current = output;
-    const sourceContext = source.getContext("2d", { willReadFrequently: true });
-    const sampleContext = sample.getContext("2d", { willReadFrequently: true });
+    const sourceContext = source.getContext("2d");
     const outputContext = output.getContext("2d", { alpha: false });
-    if (!sourceContext || !sampleContext || !outputContext) return;
+    if (!sourceContext || !outputContext) return;
 
     const resizeBuffer = (
       target: HTMLCanvasElement,
@@ -1343,12 +1245,65 @@ export default function Home() {
     let lastTrackedVideoTime = -1;
     let lastCompositedVideoTime = -1;
     let lastCompositeRevision = -1;
-    let lastSyntheticFrameAt = 0;
     let lastDetectionAt = 0;
     let detectionFrame = 0;
     let trackingFailed = false;
+    let outputIsBlack = false;
+    let effectLuminance = new Float32Array(0);
+    let effectHeat = new Float32Array(0);
+    let effectHeatSmooth = new Float32Array(0);
+    const rangeMemory = new Map<string, { low: number; high: number }>();
+    const hotspotMemory = new Map<
+      string,
+      { x: number; y: number; confidence: number }
+    >();
+    const sampleBuffers = new Map<
+      string,
+      { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D }
+    >();
 
-    const drawZoneEffect = (zone: Zone, now: number) => {
+    const getSampleBuffer = (zoneId: string) => {
+      const existing = sampleBuffers.get(zoneId);
+      if (existing) return existing;
+      const sampleCanvas = document.createElement("canvas");
+      const sampleContext = sampleCanvas.getContext("2d", {
+        willReadFrequently: true,
+      });
+      if (!sampleContext) return null;
+      const buffer = { canvas: sampleCanvas, context: sampleContext };
+      sampleBuffers.set(zoneId, buffer);
+      return buffer;
+    };
+
+    const ensureEffectBuffers = (count: number) => {
+      if (effectLuminance.length < count) effectLuminance = new Float32Array(count);
+      if (effectHeat.length < count) effectHeat = new Float32Array(count);
+      if (effectHeatSmooth.length < count) effectHeatSmooth = new Float32Array(count);
+    };
+
+    const stabilizeRange = (
+      key: string,
+      current: { low: number; high: number },
+      response = 0.2,
+    ) => {
+      const previous = rangeMemory.get(key);
+      if (!previous) {
+        rangeMemory.set(key, current);
+        return current;
+      }
+      const next = {
+        low: previous.low + (current.low - previous.low) * response,
+        high: previous.high + (current.high - previous.high) * response,
+      };
+      rangeMemory.set(key, next);
+      return next;
+    };
+
+    const drawZoneEffect = (zone: Zone) => {
+      const sampleBuffer = getSampleBuffer(zone.id);
+      if (!sampleBuffer) return;
+      const sample = sampleBuffer.canvas;
+      const sampleContext = sampleBuffer.context;
       const width = canvas.width;
       const height = canvas.height;
       const x = Math.round(zone.rect.x * width);
@@ -1383,7 +1338,7 @@ export default function Home() {
       }
 
       if (zone.effect === "thermal") {
-        const targetWidth = Math.max(48, Math.min(280, Math.round(zoneWidth / 2.4)));
+        const targetWidth = Math.max(48, Math.min(200, Math.round(zoneWidth / 3)));
         const targetHeight = Math.max(
           32,
           Math.round((targetWidth * zoneHeight) / zoneWidth),
@@ -1401,33 +1356,220 @@ export default function Home() {
           targetHeight,
         );
         const image = sampleContext.getImageData(0, 0, targetWidth, targetHeight);
-        const contrast = settingsRef.current.thermal / 50;
-        for (let index = 0; index < image.data.length; index += 4) {
-          const luminance =
-            (image.data[index] * 0.2126 +
-              image.data[index + 1] * 0.7152 +
-              image.data[index + 2] * 0.0722) /
-            255;
-          const adjusted = clamp((luminance - 0.5) * contrast + 0.5, 0, 1);
-          const [red, green, blue] = thermalColor(adjusted);
-          image.data[index] = red;
-          image.data[index + 1] = green;
-          image.data[index + 2] = blue;
+        const pixelCount = targetWidth * targetHeight;
+        ensureEffectBuffers(pixelCount);
+
+        for (let pixel = 0; pixel < pixelCount; pixel += 1) {
+          const dataIndex = pixel * 4;
+          effectLuminance[pixel] = rgbLuminance(
+            image.data[dataIndex],
+            image.data[dataIndex + 1],
+            image.data[dataIndex + 2],
+          );
+        }
+
+        const range = stabilizeRange(
+          `${zone.id}:thermal`,
+          adaptiveLuminanceRange(effectLuminance, pixelCount),
+          0.18,
+        );
+        const contrast = 0.82 + (settingsRef.current.thermal / 100) * 0.82;
+
+        for (let pixel = 0; pixel < pixelCount; pixel += 1) {
+          const dataIndex = pixel * 4;
+          const normalized = normalizeLuminance(
+            effectLuminance[pixel],
+            range.low,
+            range.high,
+          );
+          const contrasted = clamp((normalized - 0.5) * contrast + 0.5, 0, 1);
+          const lifted = THERMAL_GAMMA_LUT[Math.round(contrasted * 255)];
+          const skinWarmth = estimatedSkinWarmth(
+            image.data[dataIndex],
+            image.data[dataIndex + 1],
+            image.data[dataIndex + 2],
+          );
+          effectHeat[pixel] = clamp(lifted * 0.88 + skinWarmth * 0.12, 0, 1);
+        }
+
+        for (let row = 0; row < targetHeight; row += 1) {
+          const above = Math.max(0, row - 1);
+          const below = Math.min(targetHeight - 1, row + 1);
+          for (let column = 0; column < targetWidth; column += 1) {
+            const left = Math.max(0, column - 1);
+            const right = Math.min(targetWidth - 1, column + 1);
+            const center = row * targetWidth + column;
+            effectHeatSmooth[center] =
+              (effectHeat[above * targetWidth + left] +
+                effectHeat[above * targetWidth + column] * 2 +
+                effectHeat[above * targetWidth + right] +
+                effectHeat[row * targetWidth + left] * 2 +
+                effectHeat[center] * 4 +
+                effectHeat[row * targetWidth + right] * 2 +
+                effectHeat[below * targetWidth + left] +
+                effectHeat[below * targetWidth + column] * 2 +
+                effectHeat[below * targetWidth + right]) /
+              16;
+          }
+        }
+
+        let hottestValue = 0;
+        let hotspotWeight = 0;
+        let hotspotColumn = 0;
+        let hotspotRow = 0;
+        for (let row = 0; row < targetHeight; row += 1) {
+          const above = Math.max(0, row - 1);
+          const below = Math.min(targetHeight - 1, row + 1);
+          for (let column = 0; column < targetWidth; column += 1) {
+            const left = Math.max(0, column - 1);
+            const right = Math.min(targetWidth - 1, column + 1);
+            const pixel = row * targetWidth + column;
+            const dataIndex = pixel * 4;
+            const heat = clamp(
+              effectHeat[pixel] * 0.38 + effectHeatSmooth[pixel] * 0.62,
+              0,
+              1,
+            );
+            if (heat > hottestValue) {
+              hottestValue = heat;
+            }
+            const hotspotContribution = Math.max(0, heat - 0.86);
+            hotspotWeight += hotspotContribution;
+            hotspotColumn += (column + 0.5) * hotspotContribution;
+            hotspotRow += (row + 0.5) * hotspotContribution;
+
+            const horizontal =
+              effectHeatSmooth[row * targetWidth + right] -
+              effectHeatSmooth[row * targetWidth + left];
+            const vertical =
+              effectHeatSmooth[below * targetWidth + column] -
+              effectHeatSmooth[above * targetWidth + column];
+            const edge = clamp(
+              (Math.abs(horizontal) + Math.abs(vertical) - 0.025) * 2.1,
+              0,
+              0.3,
+            );
+            const isolineDistance = Math.abs(heat * 11 - Math.round(heat * 11));
+            const isoline = clamp((0.052 - isolineDistance) / 0.052, 0, 1);
+            const dither =
+              (((BAYER_4X4[(row % 4) * 4 + (column % 4)] + 0.5) / 16) - 0.5) /
+              31;
+            const quantized = Math.round(clamp(heat + dither, 0, 1) * 31) / 31;
+            const paletteIndex = Math.round(quantized * 255) * 3;
+            const hotAmount = clamp((heat - 0.8) / 0.2, 0, 1);
+            const hotGlow = hotAmount * hotAmount * 0.3;
+            const shade = 1 - edge * 0.78 - isoline * 0.24;
+
+            image.data[dataIndex] = Math.round(
+              (THERMAL_LUT[paletteIndex] * (1 - hotGlow) + 255 * hotGlow) * shade,
+            );
+            image.data[dataIndex + 1] = Math.round(
+              (THERMAL_LUT[paletteIndex + 1] * (1 - hotGlow) + 255 * hotGlow) * shade,
+            );
+            image.data[dataIndex + 2] = Math.round(
+              (THERMAL_LUT[paletteIndex + 2] * (1 - hotGlow) + 255 * hotGlow) * shade,
+            );
+            image.data[dataIndex + 3] = 255;
+          }
         }
         sampleContext.putImageData(image, 0, 0);
         context.imageSmoothingEnabled = true;
         context.drawImage(sample, 0, 0, targetWidth, targetHeight, x, y, zoneWidth, zoneHeight);
-        context.globalCompositeOperation = "screen";
-        context.globalAlpha = 0.24;
-        context.drawImage(source, x, y, zoneWidth, zoneHeight, x, y, zoneWidth, zoneHeight);
-        context.globalAlpha = 1;
-        context.globalCompositeOperation = "source-over";
+
+        if (zoneWidth > 130 && zoneHeight > 92) {
+          const legendWidth = Math.max(6, Math.min(10, zoneWidth / 65));
+          const legendHeight = Math.min(zoneHeight * 0.58, 150);
+          const legendInset = Math.max(8, Math.min(14, zoneWidth / 38));
+          const legendX = x + zoneWidth - legendInset - legendWidth;
+          const legendY = y + (zoneHeight - legendHeight) / 2;
+          const legend = context.createLinearGradient(
+            0,
+            legendY + legendHeight,
+            0,
+            legendY,
+          );
+          THERMAL_STOPS.forEach(([red, green, blue], index) => {
+            legend.addColorStop(
+              index / (THERMAL_STOPS.length - 1),
+              `rgb(${red} ${green} ${blue})`,
+            );
+          });
+          context.save();
+          context.fillStyle = "rgba(0,0,0,.46)";
+          context.fillRect(
+            legendX - 3,
+            legendY - 3,
+            legendWidth + 6,
+            legendHeight + 6,
+          );
+          context.fillStyle = legend;
+          context.fillRect(legendX, legendY, legendWidth, legendHeight);
+          context.strokeStyle = "rgba(255,255,255,.58)";
+          context.lineWidth = Math.max(0.8, width / 1600);
+          context.strokeRect(legendX, legendY, legendWidth, legendHeight);
+          context.restore();
+        }
+
+        const previousHotspot = hotspotMemory.get(zone.id);
+        const hotspotEvidence = clamp(
+          (hotspotWeight / pixelCount - 0.0008) / 0.006,
+          0,
+          1,
+        );
+        const rawHotX =
+          hotspotWeight > 0 ? hotspotColumn / hotspotWeight / targetWidth : 0.5;
+        const rawHotY =
+          hotspotWeight > 0 ? hotspotRow / hotspotWeight / targetHeight : 0.5;
+        const hotspot = {
+          x: previousHotspot
+            ? previousHotspot.x + (rawHotX - previousHotspot.x) * 0.2
+            : rawHotX,
+          y: previousHotspot
+            ? previousHotspot.y + (rawHotY - previousHotspot.y) * 0.2
+            : rawHotY,
+          confidence:
+            (previousHotspot?.confidence ?? 0) * 0.78 + hotspotEvidence * 0.22,
+        };
+        hotspotMemory.set(zone.id, hotspot);
+
+        if (
+          hottestValue > 0.82 &&
+          hotspot.confidence > 0.24 &&
+          zoneWidth > 110 &&
+          zoneHeight > 76
+        ) {
+          const hotX = x + hotspot.x * zoneWidth;
+          const hotY = y + hotspot.y * zoneHeight;
+          const radius = Math.max(6, Math.min(14, zoneWidth / 45));
+          context.save();
+          context.beginPath();
+          context.arc(hotX, hotY, radius, 0, Math.PI * 2);
+          context.moveTo(hotX - radius * 1.5, hotY);
+          context.lineTo(hotX - radius * 0.55, hotY);
+          context.moveTo(hotX + radius * 0.55, hotY);
+          context.lineTo(hotX + radius * 1.5, hotY);
+          context.moveTo(hotX, hotY - radius * 1.5);
+          context.lineTo(hotX, hotY - radius * 0.55);
+          context.moveTo(hotX, hotY + radius * 0.55);
+          context.lineTo(hotX, hotY + radius * 1.5);
+          context.strokeStyle = "rgba(0,0,0,.72)";
+          context.lineWidth = Math.max(3, width / 360);
+          context.stroke();
+          context.strokeStyle = "rgba(255,255,255,.88)";
+          context.lineWidth = Math.max(1.2, width / 960);
+          context.stroke();
+          context.restore();
+        }
       }
 
       if (zone.effect === "ascii") {
-        const cellSize = settingsRef.current.ascii;
-        const columns = Math.max(4, Math.floor(zoneWidth / cellSize));
-        const rows = Math.max(3, Math.floor(zoneHeight / (cellSize * 1.08)));
+        const backingToCss = width / Math.max(1, canvas.clientWidth || width);
+        const cellSize = settingsRef.current.ascii * backingToCss;
+        const columns = Math.max(4, Math.min(120, Math.floor(zoneWidth / cellSize)));
+        const rows = Math.max(
+          3,
+          Math.min(80, Math.floor(zoneHeight / (cellSize * 1.08))),
+        );
         resizeBuffer(sample, columns, rows);
         sampleContext.drawImage(
           source,
@@ -1441,34 +1583,74 @@ export default function Home() {
           rows,
         );
         const image = sampleContext.getImageData(0, 0, columns, rows);
-        context.fillStyle = "rgba(4,8,9,.91)";
+        const pixelCount = columns * rows;
+        ensureEffectBuffers(pixelCount);
+        for (let pixel = 0; pixel < pixelCount; pixel += 1) {
+          const dataIndex = pixel * 4;
+          effectLuminance[pixel] = rgbLuminance(
+            image.data[dataIndex],
+            image.data[dataIndex + 1],
+            image.data[dataIndex + 2],
+          );
+        }
+        const range = stabilizeRange(
+          `${zone.id}:ascii`,
+          adaptiveLuminanceRange(effectLuminance, pixelCount),
+          0.24,
+        );
+
+        context.fillStyle = "rgba(3,7,8,.62)";
         context.fillRect(x, y, zoneWidth, zoneHeight);
         const charWidth = zoneWidth / columns;
         const charHeight = zoneHeight / rows;
-        context.font = `${Math.ceil(charHeight * 1.02)}px var(--font-geist-mono), monospace`;
-        context.textAlign = "center";
+        context.font = `${Math.ceil(charHeight * 1.04)}px "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace`;
+        context.textAlign = "left";
         context.textBaseline = "middle";
+        context.fillStyle = "rgba(230,253,249,.96)";
+        context.shadowColor = "rgba(207,255,246,.22)";
+        context.shadowBlur = Math.max(1, charHeight * 0.12);
+        const measuredGlyph = Math.max(1, context.measureText("M").width);
+        const horizontalScale = charWidth / measuredGlyph;
+
+        context.save();
+        context.translate(x, y);
+        context.scale(horizontalScale, 1);
         for (let row = 0; row < rows; row += 1) {
+          let line = "";
           for (let column = 0; column < columns; column += 1) {
-            const index = (row * columns + column) * 4;
-            const luminance =
-              (image.data[index] * 0.2126 +
-                image.data[index + 1] * 0.7152 +
-                image.data[index + 2] * 0.0722) /
-              255;
-            const character =
-              ASCII_RAMP[Math.min(ASCII_RAMP.length - 1, Math.floor(luminance * ASCII_RAMP.length))];
-            context.fillStyle = `rgba(${Math.max(80, image.data[index])}, ${Math.max(
-              150,
-              image.data[index + 1],
-            )}, ${Math.max(145, image.data[index + 2])}, ${0.42 + luminance * 0.58})`;
-            context.fillText(
-              character,
-              x + (column + 0.5) * charWidth,
-              y + (row + 0.52) * charHeight,
+            const pixel = row * columns + column;
+            const center = normalizeLuminance(
+              effectLuminance[pixel],
+              range.low,
+              range.high,
             );
+            const left = normalizeLuminance(
+              effectLuminance[row * columns + Math.max(0, column - 1)],
+              range.low,
+              range.high,
+            );
+            const right = normalizeLuminance(
+              effectLuminance[row * columns + Math.min(columns - 1, column + 1)],
+              range.low,
+              range.high,
+            );
+            const above = normalizeLuminance(
+              effectLuminance[Math.max(0, row - 1) * columns + column],
+              range.low,
+              range.high,
+            );
+            const below = normalizeLuminance(
+              effectLuminance[Math.min(rows - 1, row + 1) * columns + column],
+              range.low,
+              range.high,
+            );
+            const edge = clamp(Math.hypot(right - left, below - above) * 0.22, 0, 0.16);
+            const tone = clamp(0.08 + Math.pow(center, 0.76) * 0.92 + edge, 0, 1);
+            line += ASCII_RAMP[Math.round(tone * (ASCII_RAMP.length - 1))];
           }
+          context.fillText(line, 0, (row + 0.52) * charHeight);
         }
+        context.restore();
       }
 
       if (zone.effect === "mesh") {
@@ -1541,7 +1723,6 @@ export default function Home() {
             );
           }
         }
-        if (status === "demo") drawDemoMesh(context, width, height, now);
         context.globalAlpha = 1;
       }
 
@@ -1802,41 +1983,73 @@ export default function Home() {
         }
       }
 
-      const syntheticFrameDue = !canDrawVideo && now - lastSyntheticFrameAt >= 34;
       const needsComposite =
         output.width !== width ||
         output.height !== height ||
         lastCompositeRevision !== renderRevisionRef.current ||
-        (canDrawVideo && video.currentTime !== lastCompositedVideoTime) ||
-        syntheticFrameDue;
+        (canDrawVideo && video.currentTime !== lastCompositedVideoTime);
 
-      context.clearRect(0, 0, width, height);
-      if (needsComposite) {
-        if (canDrawVideo) {
+      if (!canDrawVideo) {
+        const shouldRefreshBlack =
+          !outputIsBlack ||
+          output.width !== width ||
+          output.height !== height ||
+          status === "ready";
+        if (shouldRefreshBlack) {
+          context.clearRect(0, 0, width, height);
+          context.fillStyle = "#000";
+          context.fillRect(0, 0, width, height);
+          resizeBuffer(output, width, height);
+          outputContext.fillStyle = "#000";
+          outputContext.fillRect(0, 0, width, height);
+          lastCompositeRevision = renderRevisionRef.current;
+          lastCompositedVideoTime = -1;
+          outputIsBlack = true;
+        }
+      } else {
+        context.clearRect(0, 0, width, height);
+        if (needsComposite) {
           context.save();
           context.translate(width, 0);
           context.scale(-1, 1);
           context.drawImage(video, 0, 0, width, height);
           context.restore();
+          resizeBuffer(source, width, height);
+          sourceContext.drawImage(canvas, 0, 0, width, height);
+          zonesRef.current.forEach((zone) => drawZoneEffect(zone));
+          const liveZoneIds = new Set(zonesRef.current.map((zone) => zone.id));
+          const liveThermalIds = new Set(
+            zonesRef.current
+              .filter((zone) => zone.effect === "thermal")
+              .map((zone) => zone.id),
+          );
+          const liveRangeKeys = new Set(
+            zonesRef.current.map((zone) => `${zone.id}:${zone.effect}`),
+          );
+          for (const zoneId of sampleBuffers.keys()) {
+            if (!liveZoneIds.has(zoneId)) sampleBuffers.delete(zoneId);
+          }
+          for (const zoneId of hotspotMemory.keys()) {
+            if (!liveThermalIds.has(zoneId)) hotspotMemory.delete(zoneId);
+          }
+          for (const key of rangeMemory.keys()) {
+            if (!liveRangeKeys.has(key)) rangeMemory.delete(key);
+          }
+          resizeBuffer(output, width, height);
+          outputContext.drawImage(canvas, 0, 0, width, height);
+          lastCompositeRevision = renderRevisionRef.current;
+          lastCompositedVideoTime = video.currentTime;
         } else {
-          drawDemoCamera(context, width, height, now);
-          lastSyntheticFrameAt = now;
+          context.drawImage(output, 0, 0, width, height);
         }
-
-        resizeBuffer(source, width, height);
-        sourceContext.drawImage(canvas, 0, 0, width, height);
-        zonesRef.current.forEach((zone) => drawZoneEffect(zone, now));
-        resizeBuffer(output, width, height);
-        outputContext.drawImage(canvas, 0, 0, width, height);
-        lastCompositeRevision = renderRevisionRef.current;
-        lastCompositedVideoTime = canDrawVideo ? video.currentTime : -1;
-      } else {
-        context.drawImage(output, 0, 0, width, height);
+        outputIsBlack = false;
       }
 
-      zonesRef.current.forEach((zone) => drawZoneChrome(zone));
-      drawCreationPreview();
-      drawGestureCursors();
+      if (status === "ready") {
+        zonesRef.current.forEach((zone) => drawZoneChrome(zone));
+        drawCreationPreview();
+        drawGestureCursors();
+      }
       animationFrame = requestAnimationFrame(render);
     };
 
@@ -1852,7 +2065,7 @@ export default function Home() {
         return;
       }
 
-      if (helpOpen || (status !== "ready" && status !== "demo")) return;
+      if (helpOpen || status !== "ready") return;
       const target = event.target as HTMLElement | null;
       if (
         target?.closest(
@@ -2048,7 +2261,7 @@ export default function Home() {
   const selectedZone = zones.find((zone) => zone.id === selectedId) ?? null;
   const contextualEffect = selectedZone?.effect ?? activeEffect;
   const contextualDefinition = effectById(contextualEffect);
-  const isStudioActive = status === "ready" || status === "demo";
+  const isStudioActive = status === "ready";
 
   return (
     <main className="app-shell">
@@ -2061,7 +2274,15 @@ export default function Home() {
       />
 
       <section className="camera-panel" aria-label="AiSuperCam studio">
-        <div className="camera-stage" style={{ aspectRatio: canvasAspect }}>
+        <div
+          className="camera-stage"
+          style={
+            {
+              aspectRatio: canvasAspect,
+              "--camera-aspect": canvasAspect,
+            } as CSSProperties
+          }
+        >
           <canvas
             ref={canvasRef}
             width={1280}
@@ -2072,16 +2293,16 @@ export default function Home() {
             onPointerUp={onCanvasPointerUp}
             onPointerCancel={onCanvasPointerUp}
             tabIndex={0}
-            aria-label="Interactive webcam. Drag to create an area, drag inside an area to move it, or drag a corner to resize it."
+            aria-label="Interactive webcam. Drag to create an area, drag inside to move it, or drag a corner to resize it. Keyboard: C creates an area, keys 1 through 4 choose effects, arrows move the selection, plus and minus resize it, and Delete removes it."
           />
 
           {isStudioActive && (
             <div className="camera-toolbar">
               <span
-                className={`status-light ${status === "ready" ? "is-live" : ""}`}
+                className="status-light is-live"
                 role="status"
-                aria-label={status === "ready" ? trackingMessage : "Demo mode"}
-                title={status === "ready" ? trackingMessage : "Demo mode"}
+                aria-label={trackingMessage}
+                title={trackingMessage}
               />
 
               <nav className="effect-list" aria-label="Choose an effect">
@@ -2130,6 +2351,7 @@ export default function Home() {
 
               <span
                 className="zone-count"
+                aria-live="polite"
                 aria-label={`${zones.length} of ${MAX_ZONES} areas`}
                 title="Areas"
               >
@@ -2163,6 +2385,26 @@ export default function Home() {
                   <Ellipsis size={20} />
                 </summary>
                 <div className="toolbar-menu">
+                  <label className="mobile-strength-control">
+                    <span>
+                      {contextualDefinition.settingLabel} · {settings[contextualEffect]}
+                    </span>
+                    <input
+                      type="range"
+                      min={contextualDefinition.min}
+                      max={contextualDefinition.max}
+                      step={contextualDefinition.step}
+                      value={settings[contextualEffect]}
+                      aria-label={`${contextualDefinition.label}: ${contextualDefinition.settingLabel}`}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        setSettings((current) => ({
+                          ...current,
+                          [contextualEffect]: value,
+                        }));
+                      }}
+                    />
+                  </label>
                   <button type="button" onClick={captureSnapshot}>
                     <ImageDown size={17} />
                     Save image
@@ -2201,13 +2443,6 @@ export default function Home() {
                     <Camera size={17} />
                     Enable camera
                   </button>
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={startDemo}
-                  >
-                    Try demo
-                  </button>
                 </div>
                 <small>Processed on this device.</small>
               </div>
@@ -2243,8 +2478,8 @@ export default function Home() {
                 </h1>
                 <p>
                   {status === "denied"
-                    ? "Allow camera access in your browser settings, or continue in demo mode."
-                    : "Connect a camera, or continue in demo mode."}
+                    ? "Allow camera access in your browser settings, then try again."
+                    : "Connect a camera, then try again."}
                 </p>
                 <div className="start-actions">
                   <button
@@ -2253,13 +2488,6 @@ export default function Home() {
                     onClick={activateCamera}
                   >
                     Try again
-                  </button>
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={startDemo}
-                  >
-                    Try demo
                   </button>
                 </div>
               </div>
@@ -2319,7 +2547,8 @@ export default function Home() {
               <MousePointer2 size={17} />
               <p>
                 Mouse and touch always work: drag to create, drag inside to move,
-                and drag a corner to resize.
+                and drag a corner to resize. Keyboard: C creates, 1–4 choose an
+                effect, arrows move, plus or minus resizes, and Delete removes.
               </p>
             </div>
           </section>

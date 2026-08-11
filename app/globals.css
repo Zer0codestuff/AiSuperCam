@@ -84,8 +84,11 @@ summary:focus-visible,
 
 .camera-stage {
   position: relative;
-  width: auto;
-  height: min(calc(100dvh - 8px), calc((100vw - 8px) * 0.5625));
+  width: min(
+    calc(100vw - 8px),
+    calc((100dvh - 8px) * var(--camera-aspect, 1.7778))
+  );
+  height: auto;
   max-width: calc(100vw - 8px);
   max-height: calc(100dvh - 8px);
   overflow: hidden;
@@ -337,6 +340,10 @@ summary:focus-visible,
   cursor: not-allowed;
 }
 
+.mobile-strength-control {
+  display: none;
+}
+
 .start-overlay,
 .loading-overlay {
   position: absolute;
@@ -388,8 +395,7 @@ summary:focus-visible,
   margin-top: 28px;
 }
 
-.primary-button,
-.secondary-button {
+.primary-button {
   display: inline-flex;
   min-height: 44px;
   align-items: center;
@@ -410,16 +416,6 @@ summary:focus-visible,
 
 .primary-button:hover {
   background: rgba(255, 255, 255, 0.88);
-}
-
-.secondary-button {
-  border: 1px solid var(--line);
-  background: transparent;
-  color: #fff;
-}
-
-.secondary-button:hover {
-  background: rgba(255, 255, 255, 0.08);
 }
 
 .start-card small {
@@ -647,8 +643,7 @@ summary:focus-visible,
     flex-wrap: wrap;
   }
 
-  .primary-button,
-  .secondary-button {
+  .primary-button {
     flex: 1 1 145px;
   }
 }
@@ -656,6 +651,24 @@ summary:focus-visible,
 @media (max-width: 430px) {
   .strength-control {
     display: none;
+  }
+
+  .mobile-strength-control {
+    display: grid;
+    gap: 7px;
+    border-bottom: 1px solid var(--line);
+    padding: 7px 10px 10px;
+  }
+
+  .mobile-strength-control span {
+    color: var(--muted);
+    font-size: 10px;
+  }
+
+  .mobile-strength-control input {
+    width: 100%;
+    margin: 0;
+    accent-color: #fff;
   }
 
   .start-overlay {

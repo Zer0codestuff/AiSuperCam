@@ -37,7 +37,7 @@ test("server-renders the AiSuperCam studio", async () => {
   assert.match(html, /<title>AiSuperCam — hand-controlled webcam effects<\/title>/i);
   assert.match(html, /AiSuperCam/);
   assert.match(html, /Enable camera/);
-  assert.match(html, /Try demo/);
+  assert.doesNotMatch(html, /Try demo|Demo mode/i);
   assert.match(
     html,
     /<meta property="og:image" content="https?:\/\/[^"]+\/og\.png">/,
@@ -63,5 +63,6 @@ test("ships local vision assets and no disposable starter preview", async () => 
   assert.match(page, /import\("@mediapipe\/tasks-vision"\)/);
   assert.match(page, /MAX_ZONES = 4/);
   assert.match(page, /type EffectId = "mesh" \| "ascii" \| "thermal" \| "pixel"/);
+  assert.doesNotMatch(page, /\bdemo\b/i);
   await assert.rejects(access(new URL("app/_sites-preview", projectRoot)));
 });
