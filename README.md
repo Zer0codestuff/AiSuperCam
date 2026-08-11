@@ -1,6 +1,10 @@
 # AiSuperCam
 
-A local, hand-controlled webcam playground. Create up to four areas and apply Mesh, ASCII, Thermal and Pixel effects at the same time.
+A local, hand-controlled webcam playground. Create up to four areas and apply Mesh, ASCII, Thermal, Pixel and Aura effects at the same time.
+
+![Original AiSuperCam visual concept](./public/og.png)
+
+_The original visual concept generated before the production UI was designed._
 
 [Open the live demo](https://aisupercam-production.up.railway.app/)
 
@@ -27,7 +31,7 @@ npm run typecheck
 - **Pinch inside an area** to move it.
 - **Pinch a corner** to resize it; two pinches on opposite corners scale it.
 - Mouse and touch always work: drag to create, drag inside to move, and drag a corner to resize.
-- Keyboard: `1–4` select effects, `C` creates an area, `R` clears all, `Delete` removes the selection, arrows move it, and `+/-` resize it.
+- Keyboard: `1–5` select effects, `C` creates an area, `R` clears all, `Delete` removes the selection, arrows move it, and `+/-` resize it.
 
 Images and recordings download without area borders, handles, or gesture cursors. Webcam processing, hand tracking and rendering stay in the browser; no frame is uploaded to a server.
 
@@ -41,7 +45,7 @@ Images and recordings download without area borders, handles, or gesture cursors
 
 - React 19 + vinext
 - MediaPipe Tasks Vision, with models and WASM runtime served from `public/`
-- Canvas 2D compositing and effects
+- Canvas 2D compositing, person segmentation and effects
 - Railway hosting with Railpack
 
 ## Deploy to Railway

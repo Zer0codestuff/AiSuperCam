@@ -201,6 +201,10 @@ summary:focus-visible,
   color: #73aaff;
 }
 
+.effect-aura {
+  color: #52f0cf;
+}
+
 .effect-mesh.is-active {
   color: #087fa5;
 }
@@ -215,6 +219,10 @@ summary:focus-visible,
 
 .effect-pixel.is-active {
   color: #2369c7;
+}
+
+.effect-aura.is-active {
+  color: #087d68;
 }
 
 .toolbar-divider {
@@ -648,7 +656,7 @@ summary:focus-visible,
   }
 }
 
-@media (max-width: 430px) {
+@media (max-width: 520px) {
   .strength-control {
     display: none;
   }
@@ -670,7 +678,9 @@ summary:focus-visible,
     margin: 0;
     accent-color: #fff;
   }
+}
 
+@media (max-width: 430px) {
   .start-overlay {
     padding: 20px;
   }
