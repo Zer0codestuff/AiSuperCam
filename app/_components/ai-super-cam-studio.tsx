@@ -123,8 +123,6 @@ export function AiSuperCamStudio() {
     canvasRef,
     videoRef,
     showToast,
-    syncZones,
-    syncSelected,
   });
 
   const {
@@ -342,6 +340,9 @@ export function AiSuperCamStudio() {
         cancelAnimationFrame(zoneStateFrameRef.current);
       }
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      const recorder = recorderRef.current;
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+      recorderRef.current = null;
     };
   }, []);
 
@@ -398,16 +399,23 @@ export function AiSuperCamStudio() {
       if (event.data.size > 0) recordingChunksRef.current.push(event.data);
     };
     recorder.onstop = () => {
+      if (recorderRef.current === recorder) {
+        recorderRef.current = null;
+        setRecording(false);
+      }
+      canvasStream.getTracks().forEach((track) => track.stop());
+      const blob = new Blob(recordingChunksRef.current, {
+        type: recorder.mimeType || mimeType || "video/webm",
+      });
+      if (blob.size === 0) return;
       const outputType = recorder.mimeType || mimeType || "video/webm";
       const extension = outputType.includes("mp4") ? "mp4" : "webm";
-      const blob = new Blob(recordingChunksRef.current, { type: outputType });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = `aisupercam-${Date.now()}.${extension}`;
       anchor.click();
       URL.revokeObjectURL(url);
-      canvasStream.getTracks().forEach((track) => track.stop());
       showToast("Video saved");
     };
     recorderRef.current = recorder;

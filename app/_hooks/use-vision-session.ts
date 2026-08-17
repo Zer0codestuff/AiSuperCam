@@ -12,27 +12,23 @@ import {
   useRef,
   useState,
 } from "react";
+import { blockGoogleMetrics } from "../_lib/block-google-metrics";
 import type {
   AppStatus,
   VisionModels,
   VisionRuntime,
-  Zone,
 } from "../_lib/studio-types";
 
 type UseVisionSessionOptions = {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   videoRef: RefObject<HTMLVideoElement | null>;
   showToast: (message: string) => void;
-  syncZones: (zones: Zone[]) => void;
-  syncSelected: (zoneId: string | null) => void;
 };
 
 export function useVisionSession({
   canvasRef,
   videoRef,
   showToast,
-  syncZones,
-  syncSelected,
 }: UseVisionSessionOptions) {
   const streamRef = useRef<MediaStream | null>(null);
   const modelsRef = useRef<VisionModels | null>(null);
@@ -66,6 +62,7 @@ export function useVisionSession({
   }, []);
 
   const createVisionModels = useCallback(async (delegate: "GPU" | "CPU") => {
+    blockGoogleMetrics();
     const vision = await import("@mediapipe/tasks-vision");
     visionRuntimeRef.current = vision;
     const files = await vision.FilesetResolver.forVisionTasks("/wasm");
@@ -213,8 +210,6 @@ export function useVisionSession({
         showToast("Hand tracking unavailable — use mouse or touch");
       }
       if (session !== sessionGenerationRef.current) return;
-      syncZones([]);
-      syncSelected(null);
       setStatus("ready");
       if (modelsRef.current) {
         showToast("Hold two Ls to create · pinch to edit");
@@ -236,8 +231,6 @@ export function useVisionSession({
     initialiseVision,
     showToast,
     stopCamera,
-    syncSelected,
-    syncZones,
     videoRef,
   ]);
 

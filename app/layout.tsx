@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
+import { CONTENT_SECURITY_POLICY } from "./_lib/content-security-policy";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -18,7 +19,9 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = incoming.get("x-forwarded-host") ?? incoming.get("host");
   const forwardedProtocol = incoming.get("x-forwarded-proto");
   const protocol = forwardedProtocol ?? (host?.includes("localhost") ? "http" : "https");
-  const origin = host ? `${protocol}://${host}` : "https://aisupercam.pages.dev";
+  const origin = host
+    ? `${protocol}://${host}`
+    : "https://aisupercam-production.up.railway.app";
   const title = "AiSuperCam — hand-controlled webcam effects";
   const description =
     "Frame areas with two L-shaped hands and apply Mesh, ASCII, Thermal, Pixel and Aura effects in real time, directly in your browser.";
@@ -57,6 +60,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <meta
+          httpEquiv="Content-Security-Policy"
+          content={CONTENT_SECURITY_POLICY}
+        />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         {children}
       </body>

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { access, readFile, stat } from "node:fs/promises";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { GOOGLE_METRICS_HOST } from "../app/_lib/google-metrics-url.mjs";
 
 const projectRoot = new URL("../", import.meta.url);
 
@@ -37,6 +39,8 @@ test("server-renders the AiSuperCam studio", async () => {
   assert.match(html, /<title>AiSuperCam — hand-controlled webcam effects<\/title>/i);
   assert.match(html, /AiSuperCam/);
   assert.match(html, /Enable camera/);
+  assert.match(html, /connect-src 'self'/);
+  assert.equal(html.includes(GOOGLE_METRICS_HOST), false);
   assert.doesNotMatch(html, /Try demo|Demo mode/i);
   assert.match(
     html,
@@ -46,18 +50,24 @@ test("server-renders the AiSuperCam studio", async () => {
 });
 
 test("ships local vision assets and no disposable starter preview", async () => {
-  const assets = [
-    "public/models/hand_landmarker.task",
-    "public/models/face_landmarker.task",
-    "public/models/pose_landmarker_lite.task",
-    "public/wasm/vision_wasm_internal.wasm",
-    "public/og.png",
-  ];
+  const modelHashes = {
+    "public/models/hand_landmarker.task":
+      "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1",
+    "public/models/face_landmarker.task":
+      "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
+    "public/models/pose_landmarker_lite.task":
+      "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a",
+  };
 
-  for (const asset of assets) {
-    const info = await stat(new URL(asset, projectRoot));
-    assert.ok(info.size > 10_000, `${asset} should be a real bundled asset`);
+  for (const [asset, digest] of Object.entries(modelHashes)) {
+    const bytes = await readFile(new URL(asset, projectRoot));
+    assert.equal(createHash("sha256").update(bytes).digest("hex"), digest);
   }
+
+  const wasm = await stat(new URL("public/wasm/vision_wasm_internal.wasm", projectRoot));
+  const og = await stat(new URL("public/og.png", projectRoot));
+  assert.ok(wasm.size > 1_000_000, "vision wasm should be the MediaPipe binary");
+  assert.ok(og.size > 10_000, "og.png should be present");
 
   const studio = await readFile(
     new URL("app/_components/ai-super-cam-studio.tsx", projectRoot),
@@ -81,7 +91,7 @@ test("ships local vision assets and no disposable starter preview", async () => 
   );
   const readme = await readFile(new URL("README.md", projectRoot), "utf8");
   assert.match(visionSession, /import\("@mediapipe\/tasks-vision"\)/);
-  assert.match(visionSession, /outputSegmentationMasks: true/);
+  assert.match(visionSession, /blockGoogleMetrics\(\)/);
   assert.match(renderer, /zone\.effect === "aura"/);
   assert.match(config, /MAX_ZONES = 4/);
   assert.match(
@@ -91,4 +101,6 @@ test("ships local vision assets and no disposable starter preview", async () => 
   assert.match(readme, /!\[Original AiSuperCam visual concept\]\(\.\/public\/og\.png\)/);
   assert.doesNotMatch(studio, /\bdemo\b/i);
   await assert.rejects(access(new URL("app/_sites-preview", projectRoot)));
+  await assert.rejects(access(new URL("app/chatgpt-auth.ts", projectRoot)));
+  await assert.rejects(access(new URL("worker/index.ts", projectRoot)));
 });

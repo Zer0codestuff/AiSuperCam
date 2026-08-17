@@ -32,7 +32,7 @@ export const StudioOverlays = memo(function StudioOverlays({
               Enable camera
             </button>
           </div>
-          <small>Processed on this device.</small>
+          <small>Frames stay in this browser. MediaPipe usage metrics are blocked.</small>
         </div>
       </div>
     );
@@ -50,7 +50,7 @@ export const StudioOverlays = memo(function StudioOverlays({
           </strong>
           <span>
             {status === "starting-ai"
-              ? "Face, pose and hands stay on this device"
+              ? "Hand tracking loads on this device"
               : "Waiting for browser permission"}
           </span>
         </div>
