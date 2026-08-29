@@ -34,7 +34,7 @@ test("server-renders the AiSuperCam studio", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   assert.match(html, /<html lang="en">/i);
-  assert.match(html, /<title>AiSuperCam — hand-controlled webcam effects<\/title>/i);
+  assert.match(html, /<title>AiSuperCam - hand-controlled webcam effects<\/title>/i);
   assert.match(html, /AiSuperCam/);
   assert.match(html, /Enable camera/);
   assert.doesNotMatch(html, /Try demo|Demo mode/i);
@@ -43,6 +43,12 @@ test("server-renders the AiSuperCam studio", async () => {
     /<meta property="og:image" content="https?:\/\/[^"]+\/og\.png">/,
   );
   assert.doesNotMatch(html, /Starter Project|Building your site|react-loading-skeleton/i);
+});
+
+test("uses the live Railway deployment as the metadata fallback", async () => {
+  const layout = await readFile(new URL("app/layout.tsx", projectRoot), "utf8");
+  assert.match(layout, /https:\/\/aisupercam-production\.up\.railway\.app/);
+  assert.doesNotMatch(layout, /aisupercam\.pages\.dev/);
 });
 
 test("ships local vision assets and no disposable starter preview", async () => {

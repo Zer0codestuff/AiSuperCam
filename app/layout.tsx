@@ -13,13 +13,15 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const PRODUCTION_ORIGIN = "https://aisupercam-production.up.railway.app";
+
 export async function generateMetadata(): Promise<Metadata> {
   const incoming = await headers();
   const host = incoming.get("x-forwarded-host") ?? incoming.get("host");
   const forwardedProtocol = incoming.get("x-forwarded-proto");
   const protocol = forwardedProtocol ?? (host?.includes("localhost") ? "http" : "https");
-  const origin = host ? `${protocol}://${host}` : "https://aisupercam.pages.dev";
-  const title = "AiSuperCam — hand-controlled webcam effects";
+  const origin = host ? `${protocol}://${host}` : PRODUCTION_ORIGIN;
+  const title = "AiSuperCam - hand-controlled webcam effects";
   const description =
     "Frame areas with two L-shaped hands and apply Mesh, ASCII, Thermal, Pixel and Aura effects in real time, directly in your browser.";
 
