@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
+import { CONTENT_SECURITY_POLICY } from "./_lib/content-security-policy";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -59,6 +60,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <meta
+          httpEquiv="Content-Security-Policy"
+          content={CONTENT_SECURITY_POLICY}
+        />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         {children}
       </body>

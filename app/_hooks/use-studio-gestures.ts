@@ -23,6 +23,7 @@ import type {
   EffectId,
   GestureOperation,
   GestureTrack,
+  InputOwner,
   PinchMemory,
   Point,
   PointerOperation,
@@ -65,11 +66,12 @@ export function useStudioGestures({
   const lLatchedRef = useRef(false);
   const lReleaseSinceRef = useRef<number | null>(null);
   const gestureCooldownRef = useRef(0);
-  const gestureLabelRef = useRef("Two Ls to create");
+  const inputOwnerRef = useRef<InputOwner>({ kind: "none" });
 
-  const syncGestureLabel = useCallback((message: string) => {
-    if (gestureLabelRef.current === message) return;
-    gestureLabelRef.current = message;
+  const releaseInputOwner = useCallback((kind: InputOwner["kind"]) => {
+    if (inputOwnerRef.current.kind === kind) {
+      inputOwnerRef.current = { kind: "none" };
+    }
   }, []);
 
   const resetGestureState = useCallback(() => {
@@ -82,8 +84,8 @@ export function useStudioGestures({
     lLatchedRef.current = false;
     lReleaseSinceRef.current = null;
     gestureCooldownRef.current = 0;
-    syncGestureLabel("Two Ls to create");
-  }, [syncGestureLabel]);
+    inputOwnerRef.current = { kind: "none" };
+  }, []);
 
   const pointFromPointer = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>): Point => {
@@ -125,9 +127,12 @@ export function useStudioGestures({
   const onCanvasPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
       if (status !== "ready") return;
+      if (!event.isPrimary || event.button !== 0) return;
+      if (inputOwnerRef.current.kind === "hands") return;
       event.currentTarget.setPointerCapture(event.pointerId);
       gestureOperationRef.current = { kind: "idle" };
       lStableRef.current = null;
+      inputOwnerRef.current = { kind: "pointer", pointerId: event.pointerId };
       const point = pointFromPointer(event);
       const selected = zonesRef.current.find(
         (zone) => zone.id === selectedIdRef.current,
@@ -192,6 +197,8 @@ export function useStudioGestures({
 
   const onCanvasPointerMove = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      const owner = inputOwnerRef.current;
+      if (owner.kind !== "pointer" || owner.pointerId !== event.pointerId) return;
       const operation = pointerOperationRef.current;
       if (!operation) return;
       const point = pointFromPointer(event);
@@ -227,16 +234,22 @@ export function useStudioGestures({
     [pointFromPointer, updateZone],
   );
 
-  const onCanvasPointerUp = useCallback(() => {
-    const operation = pointerOperationRef.current;
-    pointerOperationRef.current = null;
-    creationPreviewRef.current = null;
-    if (!operation || operation.kind !== "create") return;
-    const rect = rectBetween(operation.start, operation.current);
-    if (rect.w >= MIN_ZONE_W && rect.h >= MIN_ZONE_H) {
-      addZone(activeEffectRef.current, rect);
-    }
-  }, [activeEffectRef, addZone]);
+  const onCanvasPointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      const owner = inputOwnerRef.current;
+      if (owner.kind !== "pointer" || owner.pointerId !== event.pointerId) return;
+      const operation = pointerOperationRef.current;
+      pointerOperationRef.current = null;
+      creationPreviewRef.current = null;
+      releaseInputOwner("pointer");
+      if (!operation || operation.kind !== "create") return;
+      const rect = rectBetween(operation.start, operation.current);
+      if (rect.w >= MIN_ZONE_W && rect.h >= MIN_ZONE_H) {
+        addZone(activeEffectRef.current, rect);
+      }
+    },
+    [activeEffectRef, addZone, releaseInputOwner],
+  );
 
   const findGestureTarget = useCallback(
     (point: Point, canvasWidth: number, canvasHeight: number) => {
@@ -277,8 +290,8 @@ export function useStudioGestures({
   const finishGestureOperation = useCallback(() => {
     gestureOperationRef.current = { kind: "idle" };
     gestureCooldownRef.current = performance.now() + 350;
-    syncGestureLabel("Two Ls to create");
-  }, [syncGestureLabel]);
+    releaseInputOwner("hands");
+  }, [releaseInputOwner]);
 
   const applyGestureTracks = useCallback(
     (
@@ -288,6 +301,8 @@ export function useStudioGestures({
       canvasHeight: number,
     ) => {
       gestureTracksRef.current = tracks;
+      if (inputOwnerRef.current.kind === "pointer") return;
+
       const operation = gestureOperationRef.current;
       const pinchedTracks = tracks.filter((track) => track.pinched);
 
@@ -361,7 +376,6 @@ export function useStudioGestures({
             startPoints: [primary.cursor, second.cursor],
             startRect: targetZone.rect,
           };
-          syncGestureLabel("Two pinches · resize");
           return;
         }
 
@@ -384,13 +398,11 @@ export function useStudioGestures({
               y: operation.startRect.y + deltaY,
             }),
           }));
-          syncGestureLabel("Pinch · move");
         } else {
           updateZone(operation.zoneId, (zone) => ({
             ...zone,
             rect: clampRect(rectBetween(operation.fixed, primary.cursor)),
           }));
-          syncGestureLabel("Pinch · resize");
         }
         return;
       }
@@ -401,6 +413,7 @@ export function useStudioGestures({
           syncSelected(null);
           continue;
         }
+        inputOwnerRef.current = { kind: "hands" };
         syncZones([
           ...zonesRef.current.filter((zone) => zone.id !== target.zone.id),
           target.zone,
@@ -414,7 +427,6 @@ export function useStudioGestures({
             corner: target.corner,
             fixed: oppositeCorner(target.zone.rect, target.corner),
           };
-          syncGestureLabel("Pinch · resize");
         } else {
           gestureOperationRef.current = {
             kind: "move",
@@ -423,7 +435,6 @@ export function useStudioGestures({
             startPointer: track.cursor,
             startRect: target.zone.rect,
           };
-          syncGestureLabel("Pinch · move");
         }
         creationPreviewRef.current = null;
         lStableRef.current = null;
@@ -434,6 +445,7 @@ export function useStudioGestures({
       if (hasPinchIntent || now < gestureCooldownRef.current) {
         creationPreviewRef.current = null;
         lStableRef.current = null;
+        releaseInputOwner("hands");
         return;
       }
 
@@ -455,8 +467,7 @@ export function useStudioGestures({
       if (lTracks.length < 2) {
         creationPreviewRef.current = null;
         lStableRef.current = null;
-        if (tracks.length > 0) syncGestureLabel("Make two Ls");
-        else syncGestureLabel("Two Ls to create");
+        releaseInputOwner("hands");
         return;
       }
 
@@ -466,6 +477,7 @@ export function useStudioGestures({
         .map((track) => track.key)
         .sort()
         .join("|");
+      inputOwnerRef.current = { kind: "hands" };
       if (
         rect.w * canvasWidth < 96 ||
         rect.h * canvasHeight < 72 ||
@@ -473,11 +485,6 @@ export function useStudioGestures({
       ) {
         creationPreviewRef.current = { rect, progress: 0 };
         lStableRef.current = null;
-        syncGestureLabel(
-          zonesRef.current.length >= MAX_ZONES
-            ? "Up to 4 areas"
-            : "Move the Ls apart",
-        );
         return;
       }
 
@@ -499,7 +506,6 @@ export function useStudioGestures({
       lStableRef.current = { rect, pairKey, stableSince, lastAt: now };
       const progress = clamp((now - stableSince) / 560, 0, 1);
       creationPreviewRef.current = { rect, progress };
-      syncGestureLabel(progress > 0.1 ? "Hold the Ls" : "Area preview");
 
       if (progress >= 1) {
         const zone = addZone(activeEffectRef.current, rect);
@@ -507,8 +513,8 @@ export function useStudioGestures({
           lLatchedRef.current = true;
           creationPreviewRef.current = null;
           lStableRef.current = null;
-          syncGestureLabel("Area created");
           gestureCooldownRef.current = now + 400;
+          releaseInputOwner("hands");
         }
       }
     },
@@ -517,7 +523,7 @@ export function useStudioGestures({
       addZone,
       findGestureTarget,
       finishGestureOperation,
-      syncGestureLabel,
+      releaseInputOwner,
       syncSelected,
       syncZones,
       updateZone,

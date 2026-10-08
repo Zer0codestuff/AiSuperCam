@@ -33,7 +33,7 @@ npm run typecheck
 - Mouse and touch always work: drag to create, drag inside to move, and drag a corner to resize.
 - Keyboard: `1–5` select effects, `C` creates an area, `R` clears all, `Delete` removes the selection, arrows move it, and `+/-` resize it.
 
-Images and recordings download without area borders, handles, or gesture cursors. Webcam processing, hand tracking and rendering stay in the browser; no frame is uploaded to a server.
+Images and recordings download without area borders, handles, or gesture cursors. Webcam processing, hand tracking and rendering stay in the browser; no frame is uploaded to a server. The app blocks MediaPipe's usage-metrics POST so those pings never leave the page.
 
 ## Troubleshooting
 

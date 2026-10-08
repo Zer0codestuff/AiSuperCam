@@ -1,6 +1,6 @@
 # Third-party notices
 
-AiSuperCam redistributes MediaPipe runtime and model assets so webcam processing can remain local to the browser.
+AiSuperCam redistributes MediaPipe runtime and model assets so webcam processing can remain local to the browser. `@mediapipe/tasks-vision` 1.0.1 would otherwise POST usage metrics to Google; the app intercepts that `fetch` and sets `Content-Security-Policy: connect-src 'self'`.
 
 ## MediaPipe Tasks Vision
 

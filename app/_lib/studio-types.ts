@@ -71,6 +71,11 @@ export type VisionResults = {
 
 export type Connection = { start: number; end: number };
 
+export type InputOwner =
+  | { kind: "none" }
+  | { kind: "pointer"; pointerId: number }
+  | { kind: "hands" };
+
 export type PointerOperation =
   | { kind: "create"; start: Point; current: Point }
   | {
